@@ -2,18 +2,11 @@
 const grid = document.getElementById('grid');
 const loading = document.getElementById('loading');
 const error = document.getElementById('error');
-const refreshBtn = document.getElementById('refreshBtn');
 const countEl = document.getElementById('count');
-const dropdownBtn = document.getElementById('dropdownBtn');
-const dropdownBtnText = document.getElementById('dropdownBtnText');
-const dropdownMenu = document.getElementById('dropdownMenu');
-const dropdownList = document.getElementById('dropdownList');
-const selectAllBtn = document.getElementById('selectAllBtn');
-const deselectAllBtn = document.getElementById('deselectAllBtn');
+const modeSwitcher = document.getElementById('modeSwitcher');
 
 // Vérifier que tous les éléments critiques existent
-if (!grid || !loading || !error || !refreshBtn || !countEl || !dropdownBtn || 
-    !dropdownBtnText || !dropdownMenu || !dropdownList || !selectAllBtn || !deselectAllBtn) {
+if (!grid || !loading || !error || !countEl || !modeSwitcher) {
     console.error('Erreur: Certains éléments DOM sont manquants');
     if (error) {
         error.textContent = 'Erreur: Éléments DOM manquants. Vérifiez que tous les éléments sont présents dans le HTML.';
@@ -42,7 +35,8 @@ const CONFIG_API_URL = '/api/config';
 
 // État des containers
 let allContainers = [];
-let selectedContainers = new Set();
+let currentMode = 'scheduler'; // 'all' ou 'scheduler'
+let containersCache = new Map(); // Cache des éléments DOM des containers
 
 // Charger la configuration puis les containers au démarrage
 async function init() {
@@ -72,7 +66,13 @@ async function init() {
         
         // Charger les containers une fois la config chargée
         await loadContainersFromAPI();
-        loadContainers();
+        // Attendre que le DOM soit prêt pour calculer les positions
+        setTimeout(() => {
+            updateModeSwitcher();
+            loadContainers();
+            // Démarrer le rafraîchissement automatique
+            initAutoRefresh();
+        }, 0);
     } catch (err) {
         console.error('Erreur lors du chargement de la configuration:', err);
         if (loading) loading.style.display = 'none';
@@ -90,51 +90,60 @@ if (document.readyState === 'loading') {
     init();
 }
 
-// Initialiser les event listeners seulement si les éléments existent
-if (refreshBtn) {
-    refreshBtn.addEventListener('click', () => {
-        loadContainersFromAPI();
-        loadContainers();
+// Gérer le switcher de mode
+if (modeSwitcher) {
+    modeSwitcher.addEventListener('click', (e) => {
+        const clickedMode = e.target.dataset.mode;
+        if (clickedMode && clickedMode !== currentMode) {
+            currentMode = clickedMode;
+            // Utiliser requestAnimationFrame pour s'assurer que le DOM est mis à jour
+            requestAnimationFrame(() => {
+                updateModeSwitcher();
+                loadContainers();
+            });
+        }
+    });
+    
+    // Mettre à jour l'indicateur lors du redimensionnement de la fenêtre
+    window.addEventListener('resize', () => {
+        updateModeSwitcher();
     });
 }
 
-// Toggle dropdown
-if (dropdownBtn && dropdownMenu) {
-    dropdownBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        dropdownMenu.style.display = dropdownMenu.style.display === 'none' ? 'block' : 'none';
-    });
-}
-
-// Fermer le dropdown en cliquant ailleurs
-if (dropdownBtn && dropdownMenu) {
-    document.addEventListener('click', (e) => {
-        if (!dropdownBtn.contains(e.target) && !dropdownMenu.contains(e.target)) {
-            dropdownMenu.style.display = 'none';
+// Mettre à jour l'affichage du switcher
+function updateModeSwitcher() {
+    if (!modeSwitcher) return;
+    
+    modeSwitcher.setAttribute('data-mode', currentMode);
+    const options = modeSwitcher.querySelectorAll('.mode-option');
+    const indicator = modeSwitcher.querySelector('.mode-switcher-indicator');
+    
+    options.forEach((option, index) => {
+        if (option.dataset.mode === currentMode) {
+            option.classList.add('active');
+            // Calculer la position et la largeur de l'indicateur basé sur l'option active
+            if (indicator) {
+                // Calculer la position en additionnant les largeurs des options précédentes
+                let left = 0;
+                for (let i = 0; i < index; i++) {
+                    left += options[i].offsetWidth;
+                }
+                const width = option.offsetWidth;
+                
+                indicator.style.width = `${width}px`;
+                indicator.style.transform = `translateX(${left}px)`;
+            }
+        } else {
+            option.classList.remove('active');
         }
     });
 }
 
-// Boutons sélectionner/désélectionner tout
-if (selectAllBtn) {
-    selectAllBtn.addEventListener('click', () => {
-        allContainers.forEach(container => selectedContainers.add(container.name));
-        updateDropdownDisplay();
-        loadContainers();
-    });
-}
-
-if (deselectAllBtn) {
-    deselectAllBtn.addEventListener('click', () => {
-        selectedContainers.clear();
-        updateDropdownDisplay();
-        loadContainers();
-    });
-}
-
 // Récupérer les containers depuis l'API Incus via le proxy serveur
-async function loadContainersFromAPI() {
+async function loadContainersFromAPI(silent = false) {
     try {
+        if (!silent && loading) loading.style.display = 'block';
+        
         const response = await fetch(INCUS_API_URL);
         
         if (!response.ok) {
@@ -145,10 +154,24 @@ async function loadContainersFromAPI() {
         
         // Le serveur retourne déjà les containers traités
         if (data.containers && Array.isArray(data.containers)) {
-            allContainers = data.containers;
-            updateDropdownDisplay();
-            // Mettre à jour le compteur avec le total
-            if (countEl) countEl.textContent = `0/${allContainers.length} containers`;
+            const previousContainers = new Map(allContainers.map(c => [c.name, c]));
+            const newContainers = data.containers;
+            const newContainersMap = new Map(newContainers.map(c => [c.name, c]));
+            
+            // Synchroniser les containers : ajouter les nouveaux, supprimer les supprimés
+            synchronizeContainers(previousContainers, newContainersMap);
+            
+            allContainers = newContainers;
+            
+            if (!silent) {
+                loadContainers();
+            } else {
+                // Mise à jour silencieuse : juste synchroniser sans recharger
+                synchronizeContainersDOM(previousContainers, newContainersMap);
+                updateContainersVisibility();
+                const containersToDisplay = getContainersToDisplay();
+                if (countEl) countEl.textContent = `${containersToDisplay.length}/${allContainers.length} containers`;
+            }
         } else {
             console.warn('Format de données API non reconnu:', data);
             allContainers = [];
@@ -156,79 +179,112 @@ async function loadContainersFromAPI() {
         }
     } catch (err) {
         console.error('Erreur lors de la récupération des containers:', err);
-        if (error) {
+        if (!silent && error) {
             error.textContent = `Erreur lors de la récupération: ${err.message}`;
             error.style.display = 'block';
         }
         allContainers = [];
+    } finally {
+        if (!silent && loading) loading.style.display = 'none';
     }
 }
 
-// Mettre à jour l'affichage du dropdown
-function updateDropdownDisplay() {
-    if (!dropdownList) {
-        console.error('dropdownList est null');
-        return;
-    }
+// Synchroniser les containers : ajouter les nouveaux, supprimer les supprimés
+function synchronizeContainers(previousContainers, newContainersMap) {
+    // Cette fonction est appelée lors du premier chargement
+    // La synchronisation DOM se fait dans synchronizeContainersDOM
+}
+
+// Synchroniser le DOM : ajouter les nouveaux containers, supprimer les supprimés
+function synchronizeContainersDOM(previousContainers, newContainersMap) {
+    if (!grid) return;
     
-    if (allContainers.length === 0) {
-        dropdownList.innerHTML = '<div class="dropdown-empty">Aucun container disponible</div>';
-        return;
-    }
+    const INCUS_HOST = extractHostname(INCUS_SERVER);
+    const existingContainerElements = new Map();
     
-    // Sélectionner "scheduler" par défaut si aucun container n'est sélectionné
-    if (selectedContainers.size === 0) {
-        const schedulerContainer = allContainers.find(c => c.name === 'scheduler');
-        if (schedulerContainer) {
-            selectedContainers.add('scheduler');
+    // Récupérer tous les containers existants dans le DOM
+    grid.querySelectorAll('.grid-item').forEach(item => {
+        const containerName = item.dataset.containerName || 
+            item.querySelector('.grid-item-header span:first-child')?.textContent;
+        if (containerName) {
+            existingContainerElements.set(containerName, item);
         }
-    }
-    
-    dropdownList.innerHTML = allContainers.map(container => `
-        <label class="dropdown-item">
-            <input 
-                type="checkbox" 
-                value="${container.name}"
-                ${selectedContainers.has(container.name) ? 'checked' : ''}
-                class="container-checkbox">
-            <span class="container-name" title="${container.name}">${container.name}</span>
-        </label>
-    `).join('');
-    
-    // Ajouter les event listeners aux checkboxes
-    dropdownList.querySelectorAll('.container-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('change', (e) => {
-            const containerName = e.target.value;
-            if (e.target.checked) {
-                selectedContainers.add(containerName);
-            } else {
-                selectedContainers.delete(containerName);
-            }
-            updateDropdownButtonText();
-            loadContainers();
-        });
     });
     
-    updateDropdownButtonText();
+    // Supprimer les containers qui n'existent plus
+    existingContainerElements.forEach((element, containerName) => {
+        if (!newContainersMap.has(containerName)) {
+            element.remove();
+            containersCache.delete(containerName);
+        }
+    });
     
-    // Charger les containers si scheduler a été sélectionné par défaut
-    if (selectedContainers.size > 0) {
-        loadContainers();
-    }
+    // Mettre à jour les containers existants et ajouter les nouveaux
+    newContainersMap.forEach((container, containerName) => {
+        const existingElement = existingContainerElements.get(containerName);
+        
+        if (existingElement) {
+            // Container existant : mettre à jour l'IP si elle a changé (sans recharger l'iframe)
+            const ipElement = existingElement.querySelector('.grid-item-header .ip');
+            if (ipElement && container.ip && ipElement.textContent !== container.ip) {
+                ipElement.textContent = container.ip;
+            }
+        } else {
+            // Nouveau container à ajouter
+            const allToPreload = getAllContainersToPreload();
+            const shouldPreload = allToPreload.some(c => c.name === containerName);
+            
+            if (shouldPreload && container.ip) {
+                const vncUrl = `https://${VNC_BASE_URL}#host=${INCUS_HOST}&port=443&autoconnect=true&scaling=local&path=websockify?token=${container.ip}`;
+                
+                const containerElement = document.createElement('div');
+                containerElement.className = 'grid-item';
+                containerElement.dataset.containerName = container.name;
+                containerElement.innerHTML = `
+                    <div class="grid-item-header">
+                        <span>${container.name}</span>
+                        <span class="ip">${container.ip}</span>
+                    </div>
+                    <iframe 
+                        src="${vncUrl}" 
+                        class="grid-item-iframe"
+                        title="${container.name}"
+                        allow="fullscreen"
+                        loading="eager">
+                    </iframe>
+                `;
+                
+                grid.appendChild(containerElement);
+                containersCache.set(container.name, containerElement);
+            }
+        }
+    });
 }
 
-// Mettre à jour le texte du bouton dropdown
-function updateDropdownButtonText() {
-    if (!dropdownBtnText) return;
+// Obtenir tous les containers à précharger (scheduler + tous les autres actifs)
+function getAllContainersToPreload() {
+    if (allContainers.length === 0) {
+        return [];
+    }
     
-    const count = selectedContainers.size;
-    if (count === 0) {
-        dropdownBtnText.textContent = 'Sélectionner des containers';
+    // Inclure scheduler + tous les autres containers actifs
+    return allContainers.filter(c => 
+        c.name === 'scheduler' || (c.name !== 'scheduler' && c.status === 'Running')
+    );
+}
+
+// Obtenir les containers à afficher selon le mode
+function getContainersToDisplay() {
+    if (allContainers.length === 0) {
+        return [];
+    }
+    
+    if (currentMode === 'scheduler') {
+        // Mode Scheduler : seulement scheduler
+        return allContainers.filter(c => c.name === 'scheduler');
     } else {
-        // Afficher les noms des containers sélectionnés séparés par des virgules
-        const selectedNames = Array.from(selectedContainers);
-        const namesText = selectedNames.join(', ');
-        dropdownBtnText.textContent = namesText;
+        // Mode All : tous les containers actifs sauf scheduler
+        return allContainers.filter(c => c.name !== 'scheduler' && c.status === 'Running');
     }
 }
 
@@ -240,34 +296,27 @@ function loadContainers() {
     
     loading.style.display = 'block';
     error.style.display = 'none';
-    grid.innerHTML = '';
     
     try {
-        if (selectedContainers.size === 0) {
+        // Obtenir les containers à afficher selon le mode
+        const containersToDisplay = getContainersToDisplay();
+        
+        if (containersToDisplay.length === 0) {
+            // Si aucun container à afficher, vider le grid
+            if (grid) grid.innerHTML = '';
             displayContainers([]);
             if (countEl) countEl.textContent = `0/${allContainers.length} containers`;
             loading.style.display = 'none';
             return;
         }
         
-        // Générer les containers sélectionnés avec leurs IPs
-        const INCUS_HOST = extractHostname(INCUS_SERVER);
-        const containers = Array.from(selectedContainers)
-            .map(containerName => {
-                const container = allContainers.find(c => c.name === containerName);
-                if (!container || !container.ip) {
-                    return null;
-                }
-                return {
-                    name: container.name,
-                    ip: container.ip,
-                    vncUrl: `https://${VNC_BASE_URL}#host=${INCUS_HOST}&port=443&autoconnect=true&scaling=local&path=websockify?token=${container.ip}`
-                };                        
-            })
-            .filter(c => c !== null);
+        // Précharger tous les containers si ce n'est pas déjà fait
+        preloadAllContainers();
         
-        displayContainers(containers);
-        if (countEl) countEl.textContent = `${containers.length}/${allContainers.length} containers`;
+        // Mettre à jour la visibilité selon le mode
+        updateContainersVisibility();
+        
+        if (countEl) countEl.textContent = `${containersToDisplay.length}/${allContainers.length} containers`;
         
     } catch (err) {
         console.error('Erreur:', err);
@@ -281,6 +330,95 @@ function loadContainers() {
     }
 }
 
+// Précharger tous les containers dans le DOM
+function preloadAllContainers() {
+    if (!grid) return;
+    
+    const allToPreload = getAllContainersToPreload();
+    if (allToPreload.length === 0) return;
+    
+    const INCUS_HOST = extractHostname(INCUS_SERVER);
+    
+    // Vérifier si les containers sont déjà dans le DOM
+    const existingContainers = new Set();
+    grid.querySelectorAll('.grid-item').forEach(item => {
+        const name = item.dataset.containerName || 
+            item.querySelector('.grid-item-header span:first-child')?.textContent;
+        if (name) existingContainers.add(name);
+    });
+    
+    // Créer uniquement les containers manquants (ne pas toucher aux existants)
+    allToPreload.forEach(container => {
+        if (!container || !container.ip || existingContainers.has(container.name)) {
+            return;
+        }
+        
+        const vncUrl = `https://${VNC_BASE_URL}#host=${INCUS_HOST}&port=443&autoconnect=true&scaling=local&path=websockify?token=${container.ip}`;
+        
+        const containerElement = document.createElement('div');
+        containerElement.className = 'grid-item';
+        containerElement.dataset.containerName = container.name;
+        containerElement.innerHTML = `
+            <div class="grid-item-header">
+                <span>${container.name}</span>
+                <span class="ip">${container.ip}</span>
+            </div>
+            <iframe 
+                src="${vncUrl}" 
+                class="grid-item-iframe"
+                title="${container.name}"
+                allow="fullscreen"
+                loading="eager">
+            </iframe>
+        `;
+        
+        grid.appendChild(containerElement);
+        containersCache.set(container.name, containerElement);
+    });
+}
+
+// Mettre à jour la visibilité des containers selon le mode
+function updateContainersVisibility() {
+    if (!grid) return;
+    
+    const containersToDisplay = getContainersToDisplay();
+    const visibleNames = new Set(containersToDisplay.map(c => c.name));
+    
+    // Mettre à jour la visibilité de tous les containers
+    grid.querySelectorAll('.grid-item').forEach(item => {
+        const containerName = item.dataset.containerName || 
+            item.querySelector('.grid-item-header span:first-child')?.textContent;
+        
+        if (containerName && visibleNames.has(containerName)) {
+            // Afficher le container
+            item.style.display = '';
+            item.style.position = '';
+            item.style.left = '';
+            item.style.top = '';
+            item.style.opacity = '';
+            item.style.pointerEvents = '';
+            item.classList.remove('hidden');
+        } else {
+            // Masquer visuellement mais garder dans le DOM pour précharger les iframes
+            // Positionner hors écran pour que les iframes continuent de charger
+            item.style.display = 'block';
+            item.style.position = 'absolute';
+            item.style.left = '-9999px';
+            item.style.top = '0';
+            item.style.opacity = '0';
+            item.style.pointerEvents = 'none';
+            item.classList.add('hidden');
+        }
+    });
+    
+    // Mettre à jour la classe grid-single si nécessaire
+    if (containersToDisplay.length === 1) {
+        grid.classList.add('grid-single');
+    } else {
+        grid.classList.remove('grid-single');
+    }
+}
+
 function displayContainers(containers) {
     if (!grid) {
         console.error('grid est null dans displayContainers');
@@ -288,42 +426,56 @@ function displayContainers(containers) {
     }
     
     if (containers.length === 0) {
-        grid.innerHTML = `
-            <div class="empty-state">
-                <h2>Aucun container</h2>
-                <p>Sélectionnez des containers dans le menu déroulant ci-dessus</p>
-            </div>
-        `;
+        // Afficher l'état vide seulement si aucun container n'est préchargé
+        const hasPreloadedContainers = grid.querySelectorAll('.grid-item').length > 0;
+        if (!hasPreloadedContainers) {
+            grid.innerHTML = `
+                <div class="empty-state">
+                    <h2>Aucun container</h2>
+                    <p>${currentMode === 'scheduler' ? 'Aucun container scheduler disponible' : 'Aucun container disponible (mode All)'}</p>
+                </div>
+            `;
+        }
         grid.classList.remove('grid-single');
         return;
     }
-    
-    // Ajouter une classe si un seul container pour l'afficher en pleine largeur
-    if (containers.length === 1) {
-        grid.classList.add('grid-single');
-    } else {
-        grid.classList.remove('grid-single');
-    }
-    
-    grid.innerHTML = containers.map(container => `
-        <div class="grid-item">
-            <div class="grid-item-header">
-                <span>${container.name}</span>
-                <span class="ip">${container.ip}</span>
-            </div>
-            <iframe 
-                src="${container.vncUrl}" 
-                class="grid-item-iframe"
-                title="${container.name}"
-                allow="fullscreen"
-                loading="lazy">
-            </iframe>
-        </div>
-    `).join('');
 }
 
-// Actualiser automatiquement toutes les 30 secondes (optionnel)
-// setInterval(() => {
-//     loadContainers();
-// }, 30000);
+// Actualiser automatiquement toutes les 30 secondes
+let refreshInterval = null;
+
+function startAutoRefresh() {
+    // Arrêter l'intervalle existant s'il y en a un
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+    
+    // Rafraîchir toutes les 30 secondes (30000 ms)
+    refreshInterval = setInterval(() => {
+        // Rafraîchir silencieusement (sans afficher le loading)
+        loadContainersFromAPI(true);
+    }, 30000);
+}
+
+// Démarrer le rafraîchissement automatique après le chargement initial
+function initAutoRefresh() {
+    // Attendre que le chargement initial soit terminé
+    setTimeout(() => {
+        startAutoRefresh();
+    }, 1000);
+}
+
+// Arrêter le rafraîchissement automatique quand la page n'est plus visible
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        // Page cachée : arrêter le rafraîchissement
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+        }
+    } else {
+        // Page visible : redémarrer le rafraîchissement
+        startAutoRefresh();
+    }
+});
 

@@ -9,20 +9,12 @@
 <body>
     <div class="container">
         <div class="controls">
-            <div class="dropdown-container">
-                <button id="dropdownBtn" class="btn dropdown-btn">
-                    <span id="dropdownBtnText">Sélectionner des containers</span>
-                    <span class="dropdown-arrow">▼</span>
+            <div class="mode-switcher">
+                <button id="modeSwitcher" class="mode-switcher-btn">
+                    <span class="mode-switcher-indicator"></span>
+                    <span class="mode-option" data-mode="all">All</span>
+                    <span class="mode-option active" data-mode="scheduler">Scheduler</span>
                 </button>
-                <div id="dropdownMenu" class="dropdown-menu" style="display: none;">
-                    <div id="dropdownList" class="dropdown-list">
-                        <div class="dropdown-loading">Chargement des containers...</div>
-                    </div>
-                </div>
-            </div>
-            <div class="dropdown-actions">
-                <button id="selectAllBtn" class="btn">All</button>
-                <button id="deselectAllBtn" class="btn">Clear</button>
             </div>
             <span id="count" class="count">0 containers</span>
         </div>
