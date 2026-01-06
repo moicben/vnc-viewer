@@ -89,7 +89,15 @@ function displayContainers(containers) {
                 <p>Saisissez les numéros de containers dans le champ ci-dessus (ex: 181,182,183)</p>
             </div>
         `;
+        grid.classList.remove('grid-single');
         return;
+    }
+    
+    // Ajouter une classe si un seul container pour l'afficher en pleine largeur
+    if (containers.length === 1) {
+        grid.classList.add('grid-single');
+    } else {
+        grid.classList.remove('grid-single');
     }
     
     grid.innerHTML = containers.map(container => `
