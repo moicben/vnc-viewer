@@ -25,7 +25,7 @@ let selectedContainers = new Set();
 
 // Charger la configuration puis les containers au démarrage
 async function init() {
-    try {
+    try { 
         loading.style.display = 'block';
         const configResponse = await fetch(CONFIG_API_URL);
         
