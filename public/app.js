@@ -147,9 +147,12 @@ async function loadContainersFromAPI() {
         if (data.containers && Array.isArray(data.containers)) {
             allContainers = data.containers;
             updateDropdownDisplay();
+            // Mettre à jour le compteur avec le total
+            if (countEl) countEl.textContent = `0/${allContainers.length} containers`;
         } else {
             console.warn('Format de données API non reconnu:', data);
             allContainers = [];
+            if (countEl) countEl.textContent = '0/0 containers';
         }
     } catch (err) {
         console.error('Erreur lors de la récupération des containers:', err);
@@ -242,7 +245,7 @@ function loadContainers() {
     try {
         if (selectedContainers.size === 0) {
             displayContainers([]);
-            if (countEl) countEl.textContent = '0 containers';
+            if (countEl) countEl.textContent = `0/${allContainers.length} containers`;
             loading.style.display = 'none';
             return;
         }
@@ -264,7 +267,7 @@ function loadContainers() {
             .filter(c => c !== null);
         
         displayContainers(containers);
-        if (countEl) countEl.textContent = `${containers.length} container${containers.length !== 1 ? 's' : ''}`;
+        if (countEl) countEl.textContent = `${containers.length}/${allContainers.length} containers`;
         
     } catch (err) {
         console.error('Erreur:', err);

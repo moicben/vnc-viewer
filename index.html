@@ -8,28 +8,24 @@
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>Containers</h1>
-            <div class="controls">
-                <div class="dropdown-container">
-                    <button id="dropdownBtn" class="btn dropdown-btn">
-                        <span id="dropdownBtnText">Sélectionner des containers</span>
-                        <span class="dropdown-arrow">▼</span>
-                    </button>
-                    <div id="dropdownMenu" class="dropdown-menu" style="display: none;">
-                        <div class="dropdown-header">
-                            <button id="selectAllBtn" class="btn-small">All</button>
-                            <button id="deselectAllBtn" class="btn-small">Clear</button>
-                        </div>
-                        <div id="dropdownList" class="dropdown-list">
-                            <div class="dropdown-loading">Chargement des containers...</div>
-                        </div>
+        <div class="controls">
+            <div class="dropdown-container">
+                <button id="dropdownBtn" class="btn dropdown-btn">
+                    <span id="dropdownBtnText">Sélectionner des containers</span>
+                    <span class="dropdown-arrow">▼</span>
+                </button>
+                <div id="dropdownMenu" class="dropdown-menu" style="display: none;">
+                    <div id="dropdownList" class="dropdown-list">
+                        <div class="dropdown-loading">Chargement des containers...</div>
                     </div>
                 </div>
-                <button id="refreshBtn" class="btn">Actualiser</button>
-                <span id="count" class="count">0 containers</span>
             </div>
-        </header>
+            <div class="dropdown-actions">
+                <button id="selectAllBtn" class="btn">All</button>
+                <button id="deselectAllBtn" class="btn">Clear</button>
+            </div>
+            <span id="count" class="count">0 containers</span>
+        </div>
         
         <div id="loading" class="loading">
             <div class="spinner"></div>
