@@ -2,14 +2,5 @@
   "name": "incus-containers-viewer",
   "version": "1.0.0",
   "description": "Visualiseur de containers Incus en grille responsive",
-  "type": "module",
-  "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "child_process": "^1.0.2",
-    "dotenv": "^17.2.3",
-    "express": "^4.18.2"
-  }
+  "type": "module"
 }
