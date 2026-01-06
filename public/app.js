@@ -258,8 +258,8 @@ function loadContainers() {
                 return {
                     name: container.name,
                     ip: container.ip,
-                    vncUrl: `${VNC_BASE_URL}#host=${INCUS_HOST}&autoconnect=true&scaling=local&path=websockify?token=${container.ip}`
-                };
+                    vncUrl: `${VNC_BASE_URL}#host=${INCUS_HOST}&port=443&autoconnect=true&scaling=local&path=websockify?token=${container.ip}`
+                };                        
             })
             .filter(c => c !== null);
         
