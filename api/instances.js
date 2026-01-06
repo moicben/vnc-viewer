@@ -1,8 +1,8 @@
 export default async function handler(req, res) {
   try {
     // Configuration depuis les variables d'environnement
-    const INCUS_API_URL = process.env.INCUS_API_URL || 'https://agi.worksbase.pro/instances';
-    const INCUS_API_KEY = process.env.INCUS_API_KEY || '';
+    const INCUS_API_URL = process.env.INCUS_API_URL;
+    const INCUS_API_KEY = process.env.INCUS_API_KEY;
     const IP_PREFIX = process.env.IP_PREFIX || '10.225.44.';
 
     if (!INCUS_API_KEY) {

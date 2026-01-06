@@ -59,6 +59,8 @@ async function init() {
         INCUS_SERVER = config.incusServer;
         INCUS_PORT = config.incusPort;
         IP_PREFIX = config.ipPrefix;
+        // Le paramètre encrypt=false dans l'URL forcera l'utilisation de ws:// au lieu de wss://
+        // pour éviter les erreurs de certificat SSL invalide
         VNC_BASE_URL = `https://${INCUS_SERVER}:${INCUS_PORT}/vnc.html`;
         
         // Charger les containers une fois la config chargée
@@ -248,7 +250,7 @@ function loadContainers() {
                 return {
                     name: container.name,
                     ip: container.ip,
-                    vncUrl: `${VNC_BASE_URL}#host=${INCUS_SERVER}&port=${INCUS_PORT}&autoconnect=true&scaling=local&path=websockify?token=${container.ip}`
+                    vncUrl: `${VNC_BASE_URL}#host=${INCUS_SERVER}&port=${INCUS_PORT}&autoconnect=true&scaling=local&encrypt=false&path=websockify?token=${container.ip}`
                 };
             })
             .filter(c => c !== null);
