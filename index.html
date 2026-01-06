@@ -9,12 +9,15 @@
 <body>
     <div class="container">
         <div class="controls">
-            <div class="mode-switcher">
-                <button id="modeSwitcher" class="mode-switcher-btn">
-                    <span class="mode-switcher-indicator"></span>
-                    <span class="mode-option" data-mode="all">All</span>
-                    <span class="mode-option active" data-mode="scheduler">Scheduler</span>
-                </button>
+            <div class="controls-left">
+                <div class="mode-switcher">
+                    <button id="modeSwitcher" class="mode-switcher-btn">
+                        <span class="mode-switcher-indicator"></span>
+                        <span class="mode-option" data-mode="all">All</span>
+                        <span class="mode-option active" data-mode="scheduler">Scheduler</span>
+                    </button>
+                </div>
+                <span id="refreshTimer" class="refresh-timer"></span>
             </div>
             <span id="count" class="count">0 containers</span>
         </div>

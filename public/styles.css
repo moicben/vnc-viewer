@@ -103,6 +103,12 @@ body {
     background: #1a1a1a;
 }
 
+.controls-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .count {
     background: #0a0a0a;
     border: 1px solid #2a2a2a;
@@ -112,6 +118,13 @@ body {
     color: #999;
     font-size: 13px;
     margin-left: auto;
+}
+
+.refresh-timer {
+    color: rgba(102, 102, 102, 1);
+    font-size: 13px;
+    font-weight: 400;
+    white-space: nowrap;
 }
 
 .loading {

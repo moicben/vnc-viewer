@@ -4,6 +4,7 @@ let loading = null;
 let error = null;
 let countEl = null;
 let modeSwitcher = null;
+let refreshTimer = null;
 
 // Configuration (chargée depuis l'API)
 let INCUS_SERVER = '';
@@ -36,6 +37,7 @@ function initDOMElements() {
     error = document.getElementById('error');
     countEl = document.getElementById('count');
     modeSwitcher = document.getElementById('modeSwitcher');
+    refreshTimer = document.getElementById('refreshTimer');
     
     // Vérifier que tous les éléments critiques existent
     if (!grid || !loading || !error || !countEl || !modeSwitcher) {
@@ -458,7 +460,50 @@ function displayContainers(containers) {
 }
 
 // Actualiser automatiquement toutes les 30 secondes
+const REFRESH_INTERVAL = 30000; // 30 secondes
 let refreshInterval = null;
+let timerInterval = null;
+let timeUntilRefresh = 30; // secondes
+
+// Mettre à jour l'affichage du compteur de rafraîchissement
+function updateRefreshTimer() {
+    if (!refreshTimer) return;
+        
+    if (timeUntilRefresh > 0) {
+        refreshTimer.textContent = `Refresh dans ${timeUntilRefresh}s`;
+        timeUntilRefresh--;
+    } else {
+        refreshTimer.textContent = 'Refresh...';
+    }
+}
+
+// Démarrer le compteur de rafraîchissement
+function startRefreshTimer() {
+    // Arrêter le compteur existant s'il y en a un
+    if (timerInterval) {
+        clearInterval(timerInterval);
+    }
+    
+    // Réinitialiser le compteur
+    timeUntilRefresh = REFRESH_INTERVAL / 1000;
+    updateRefreshTimer();
+    
+    // Mettre à jour le compteur toutes les secondes
+    timerInterval = setInterval(() => {
+        updateRefreshTimer();
+    }, 1000);
+}
+
+// Arrêter le compteur de rafraîchissement
+function stopRefreshTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    if (refreshTimer) {
+        refreshTimer.textContent = '';
+    }
+}
 
 function startAutoRefresh() {
     // Arrêter l'intervalle existant s'il y en a un
@@ -466,11 +511,16 @@ function startAutoRefresh() {
         clearInterval(refreshInterval);
     }
     
+    // Démarrer le compteur
+    startRefreshTimer();
+    
     // Rafraîchir toutes les 30 secondes (30000 ms)
     refreshInterval = setInterval(() => {
         // Rafraîchir silencieusement (sans afficher le loading)
         loadContainersFromAPI(true);
-    }, 30000);
+        // Réinitialiser le compteur après le rafraîchissement
+        timeUntilRefresh = REFRESH_INTERVAL / 1000;
+    }, REFRESH_INTERVAL);
 }
 
 // Démarrer le rafraîchissement automatique après le chargement initial
@@ -489,6 +539,7 @@ document.addEventListener('visibilitychange', () => {
             clearInterval(refreshInterval);
             refreshInterval = null;
         }
+        stopRefreshTimer();
     } else {
         // Page visible : redémarrer le rafraîchissement
         startAutoRefresh();
