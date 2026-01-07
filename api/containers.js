@@ -1,8 +1,8 @@
 export default async function handler(req, res) {
   try {
     // Configuration depuis les variables d'environnement
-    const INCUS_SERVER = process.env.INCUS_SERVER || 'https://agi.worksbase.pro';
-    const IP_PREFIX = process.env.IP_PREFIX || '10.225.44.';
+    const INCUS_SERVER = process.env.INCUS_SERVER ;
+    const IP_PREFIX = process.env.IP_PREFIX;
     
     // Fonction pour extraire le hostname depuis l'URL complète
     function extractHostname(url) {

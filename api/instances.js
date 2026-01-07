@@ -3,7 +3,7 @@ export default async function handler(req, res) {
     // Configuration depuis les variables d'environnement
     const INCUS_API_URL = process.env.INCUS_API_URL;
     const INCUS_API_KEY = process.env.INCUS_API_KEY;
-    const IP_PREFIX = process.env.IP_PREFIX || '10.225.44.';
+    const IP_PREFIX = process.env.IP_PREFIX;
 
     if (!INCUS_API_KEY) {
       throw new Error('INCUS_API_KEY n\'est pas configurée');
@@ -53,13 +53,13 @@ export default async function handler(req, res) {
         }
 
         return {
-          name: instance.name || 'unknown',
+          name: instance.name,
           ipSuffix: ipSuffix,
           ip: ip,
-          status: instance.status || 'Unknown',
-          type: instance.type || 'container'
+          status: instance.status,
+          type: instance.type
         };
-      }).filter(container => container.ipSuffix); // Filtrer ceux sans IP valide
+      }).filter(container => container.ipSuffix);
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
