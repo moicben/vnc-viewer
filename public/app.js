@@ -27,7 +27,7 @@ const CONFIG_API_URL = '/api/config';
 
 // État des containers
 let allContainers = [];
-let currentMode = 'scheduler'; // 'all' ou 'scheduler'
+let currentMode = 'all'; // 'all' ou 'dev'
 let containersCache = new Map(); // Cache des éléments DOM des containers
 
 // Initialiser les références aux éléments DOM
@@ -279,15 +279,15 @@ function synchronizeContainersDOM(previousContainers, newContainersMap) {
     });
 }
 
-// Obtenir tous les containers à précharger (scheduler + tous les autres actifs)
+// Obtenir tous les containers à précharger (c-template + tous les autres actifs)
 function getAllContainersToPreload() {
     if (allContainers.length === 0) {
         return [];
     }
     
-    // Inclure scheduler + tous les autres containers actifs
+    // Inclure c-template + tous les autres containers actifs
     return allContainers.filter(c => 
-        c.name === 'scheduler' || (c.name !== 'scheduler' && c.status === 'Running')
+        c.name === 'c-template' || (c.name !== 'c-template' && c.status === 'Running')
     );
 }
 
@@ -297,12 +297,12 @@ function getContainersToDisplay() {
         return [];
     }
     
-    if (currentMode === 'scheduler') {
-        // Mode Scheduler : seulement scheduler
-        return allContainers.filter(c => c.name === 'scheduler');
+    if (currentMode === 'dev') {
+        // Mode Dev : seulement c-template
+        return allContainers.filter(c => c.name === 'c-template');
     } else {
-        // Mode All : tous les containers actifs sauf scheduler
-        return allContainers.filter(c => c.name !== 'scheduler' && c.status === 'Running');
+        // Mode All : tous les containers actifs sauf c-template
+        return allContainers.filter(c => c.name !== 'c-template' && c.status === 'Running');
     }
 }
 
@@ -450,7 +450,7 @@ function displayContainers(containers) {
             grid.innerHTML = `
                 <div class="empty-state">
                     <h2>Aucun container</h2>
-                    <p>${currentMode === 'scheduler' ? 'Aucun container scheduler disponible' : 'Aucun container disponible (mode All)'}</p>
+                    <p>${currentMode === 'dev' ? 'Aucun container dev disponible' : 'Aucun container disponible (mode All)'}</p>
                 </div>
             `;
         }
