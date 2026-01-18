@@ -1004,58 +1004,13 @@ function showMeetingPopup(meeting) {
     
     if (!popup) return;
     
-    // Debug: afficher la structure complète du meeting
-    console.log('Meeting data:', {
-        id: meeting.id,
-        identity_id: meeting.identity_id,
-        identities: meeting.identities,
-        identitiesType: typeof meeting.identities,
-        isArray: Array.isArray(meeting.identities)
-    });
-    
-    // Récupérer les informations du meeting
     const meetingStart = new Date(meeting.meeting_start_at);
-    // Récupérer l'identité (peut être un objet, null, ou un tableau selon Supabase)
-    const identity = meeting.identities; // Récupéré via la relation identity_id depuis Supabase
-    const identityId = meeting.identity_id; // ID de l'identité depuis la table meetings
-    
-    const bookerName = identity?.fullname || meeting.participant_email || 'Inconnu';
-    const company = identity?.company || '';
+    const identity = meeting.identities;
     const title = meeting.meeting_title || 'Meeting';
-    const organizerEmail = meeting.participant_email || ''; // Email de l'organisateur (participant_email)
-    
-    // Email de mon identité : récupéré depuis identity_id → identities.email
-    // Gérer le cas où identities peut être null, un objet, ou un tableau vide []
-    let identityEmail = '';
-    if (identity) {
-        if (Array.isArray(identity)) {
-            // Si c'est un tableau, prendre le premier élément
-            identityEmail = identity.length > 0 ? (identity[0]?.email || '') : '';
-        } else if (typeof identity === 'object' && identity !== null) {
-            // Si c'est un objet
-            identityEmail = identity.email || '';
-        }
-    }
-    
-    // Si identities est null mais qu'on a un identity_id, la relation Supabase n'a pas fonctionné
-    if (!identity && identityId) {
-        console.warn('⚠️ Relation identities non chargée pour identity_id:', identityId, 'meeting:', meeting.id);
-    }
-    
-    // Debug pour identifier le problème
-    if (!identityEmail && identityId) {
-        console.error('❌ Email de l\'identité manquant:', {
-            meetingId: meeting.id,
-            meetingTitle: meeting.meeting_title,
-            identityId: identityId,
-            identity: identity,
-            identityType: typeof identity,
-            isArray: Array.isArray(identity)
-        });
-    }
+    const organizerEmail = meeting.participant_email || '';
+    const identityEmail = identity?.email || '';
     const meetingUrl = meeting.meeting_url || '';
     
-    // Formater la date et l'heure (en UTC)
     const dateOptions = { 
         weekday: 'long', 
         year: 'numeric', 
@@ -1073,35 +1028,20 @@ function showMeetingPopup(meeting) {
     const timeStr = meetingStart.toLocaleTimeString('fr-FR', timeOptions);
     const dateTimeStr = `${dateStr} à ${timeStr} UTC`;
     
-    // Formater la date de création (depuis created_at de la table meetings)
     let createdAtStr = 'Non renseigné';
     if (meeting.created_at) {
         const createdAt = new Date(meeting.created_at);
         const createdAtDateStr = createdAt.toLocaleDateString('fr-FR', dateOptions);
         const createdAtTimeStr = createdAt.toLocaleTimeString('fr-FR', timeOptions);
         createdAtStr = `${createdAtDateStr} à ${createdAtTimeStr}`;
-    } else {
-        console.warn('Meeting created_at manquant:', meeting.id, meeting);
     }
     
-    // Remplir la popup
     popupTitle.textContent = title;
     popupDateTime.textContent = dateTimeStr;
     popupCreatedAt.textContent = createdAtStr;
-    // Organisateur : afficher uniquement l'email de l'organisateur
     popupBooker.textContent = organizerEmail || 'Non renseigné';
-    // Email : afficher l'email de mon identité (depuis identity_id → identities.email)
     popupEmail.textContent = identityEmail || 'Non renseigné';
     
-    // Debug: vérifier les données
-    if (!meeting.created_at) {
-        console.warn('Meeting created_at manquant:', meeting.id, meeting);
-    }
-    if (!identityEmail && meeting.identity_id) {
-        console.warn('Email de l\'identité manquant pour identity_id:', meeting.identity_id, 'identity:', identity);
-    }
-    
-    // Afficher le lien du meeting
     if (meetingUrl) {
         popupUrl.href = meetingUrl;
         popupUrl.textContent = meetingUrl;
@@ -1114,11 +1054,9 @@ function showMeetingPopup(meeting) {
         popupUrl.style.color = '#666';
     }
     
-    // Afficher la popup
     popup.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     
-    // Fermer la popup
     const closePopup = () => {
         popup.style.display = 'none';
         document.body.style.overflow = '';
@@ -1129,7 +1067,6 @@ function showMeetingPopup(meeting) {
     popupClose.addEventListener('click', closePopup);
     popupOverlay.addEventListener('click', closePopup);
     
-    // Fermer avec la touche Escape
     const handleEscape = (e) => {
         if (e.key === 'Escape') {
             closePopup();

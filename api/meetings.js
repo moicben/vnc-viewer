@@ -29,8 +29,8 @@ export default async function handler(req, res) {
       sunday.setHours(23, 59, 59, 999);
     }
     
-    // Récupérer les meetings de la semaine avec les identités
-    const { data: meetings, error } = await supabase
+    // Récupérer les meetings de la semaine
+    const { data: meetingsData, error: meetingsError } = await supabase
       .from('meetings')
       .select(`
         id,
@@ -42,21 +42,42 @@ export default async function handler(req, res) {
         meeting_url,
         comment,
         created_at,
-        identity_id,
-        identities (
-          id,
-          fullname,
-          company,
-          email
-        )
+        identity_id
       `)
       .gte('meeting_start_at', monday.toISOString())
       .lte('meeting_start_at', sunday.toISOString())
       .order('meeting_start_at', { ascending: true });
     
-    if (error) {
-      throw error;
+    if (meetingsError) {
+      throw meetingsError;
     }
+    
+    // Récupérer les identités séparément pour tous les identity_id uniques
+    const identityIds = [...new Set(meetingsData.filter(m => m.identity_id).map(m => m.identity_id))];
+    let identitiesMap = new Map();
+    
+    if (identityIds.length > 0) {
+      const { data: identities, error: identitiesError } = await supabase
+        .from('identities')
+        .select('id, fullname, company, email')
+        .in('id', identityIds);
+      
+      if (identitiesError) {
+        console.error('Erreur lors de la récupération des identités:', identitiesError);
+      } else if (identities && identities.length > 0) {
+        identities.forEach(i => {
+          if (i.id) {
+            identitiesMap.set(i.id, i);
+          }
+        });
+      }
+    }
+    
+    // Fusionner les données : ajouter l'identité à chaque meeting
+    const meetings = meetingsData.map(meeting => ({
+      ...meeting,
+      identities: meeting.identity_id ? (identitiesMap.get(meeting.identity_id) || null) : null
+    }));
     
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
