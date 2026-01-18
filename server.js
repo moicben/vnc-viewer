@@ -7,6 +7,7 @@ import { dirname, join } from 'path';
 import configHandler from './api/config.js';
 import instancesHandler from './api/instances.js';
 import containersHandler from './api/containers.js';
+import meetingsHandler from './api/meetings.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -26,6 +27,7 @@ app.use(express.static(__dirname));
 app.get('/api/config', configHandler);
 app.get('/api/instances', instancesHandler);
 app.get('/api/containers', containersHandler);
+app.get('/api/meetings', meetingsHandler);
 
 // Route pour servir index.html pour toutes les autres routes (SPA)
 app.get('*', (req, res) => {

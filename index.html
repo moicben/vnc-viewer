@@ -30,26 +30,83 @@
     <div class="container">
         <div class="controls">
             <div class="controls-left">
-                <div class="mode-switcher">
-                    <button id="modeSwitcher" class="mode-switcher-btn">
-                        <span class="mode-switcher-indicator"></span>
-                        <span class="mode-option active" data-mode="all">All</span>
-                        <span class="mode-option" data-mode="dev">Dev</span>
+                <div class="view-switcher">
+                    <button id="viewSwitcher" class="view-switcher-btn">
+                        <span class="view-switcher-indicator"></span>
+                        <span class="view-option active" data-view="containers">Containers</span>
+                        <span class="view-option" data-view="calendar">Calendar</span>
                     </button>
                 </div>
-                <span id="refreshTimer" class="refresh-timer"></span>
+                <div id="containersControls" class="containers-controls">
+                    <div class="mode-switcher">
+                        <button id="modeSwitcher" class="mode-switcher-btn">
+                            <span class="mode-switcher-indicator"></span>
+                            <span class="mode-option active" data-mode="all">All</span>
+                            <span class="mode-option" data-mode="dev">Dev</span>
+                        </button>
+                    </div>
+                    <span id="refreshTimer" class="refresh-timer"></span>
+                </div>
+                <div id="calendarHeader" class="calendar-header" style="display: none;">
+                    <button id="prevWeek" class="calendar-nav-btn">←</button>
+                    <span id="calendarWeekTitle" class="calendar-week-title"></span>
+                    <button id="nextWeek" class="calendar-nav-btn">→</button>
+                </div>
             </div>
             <span id="count" class="count">0 containers</span>
         </div>
         
         <div id="loading" class="loading">
             <div class="spinner"></div>
-            <p>Chargement des containers...</p>
+            <p id="loadingText">Chargement...</p>
         </div>
         
-        <div id="grid" class="grid"></div>
+        <!-- Vue Containers -->
+        <div id="containersView" class="view-container">
+            <div id="grid" class="grid"></div>
+        </div>
+        
+        <!-- Vue Calendar -->
+        <div id="calendarView" class="view-container" style="display: none;">
+            <div id="calendar" class="calendar"></div>
+        </div>
         
         <div id="error" class="error" style="display: none;"></div>
+    </div>
+    
+    <!-- Popup de détails du meeting -->
+    <div id="meetingPopup" class="meeting-popup" style="display: none;">
+        <div class="meeting-popup-overlay"></div>
+        <div class="meeting-popup-content">
+            <button class="meeting-popup-close">&times;</button>
+            <div class="meeting-popup-header">
+                <h2 class="meeting-popup-title"></h2>
+            </div>
+            <div class="meeting-popup-body">
+                <div class="meeting-popup-info">
+                    <div class="meeting-popup-field">
+                        <span class="meeting-popup-label">Date et heure</span>
+                        <span class="meeting-popup-value" id="meetingPopupDateTime"></span>
+                    </div>
+                    <div class="meeting-popup-field">
+                        <span class="meeting-popup-label">Date de création</span>
+                        <span class="meeting-popup-value" id="meetingPopupCreatedAt"></span>
+                    </div>
+                    <div class="meeting-popup-field">
+                        <span class="meeting-popup-label">Organisateur</span>
+                        <span class="meeting-popup-value" id="meetingPopupBooker"></span>
+                    </div>
+                    <div class="meeting-popup-field">
+                        <span class="meeting-popup-label">Email</span>
+                        <span class="meeting-popup-value" id="meetingPopupEmail"></span>
+                    </div>
+                    <div class="meeting-popup-field">
+                        <span class="meeting-popup-label">Lien du meeting</span>
+                        <a id="meetingPopupUrl" class="meeting-popup-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     
     <script type="module" src="app.js"></script>

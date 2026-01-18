@@ -5,6 +5,16 @@ let error = null;
 let countEl = null;
 let modeSwitcher = null;
 let refreshTimer = null;
+let viewSwitcher = null;
+let containersView = null;
+let calendarView = null;
+let calendar = null;
+let calendarWeekTitle = null;
+let calendarHeader = null;
+let prevWeekBtn = null;
+let nextWeekBtn = null;
+let loadingText = null;
+let containersControls = null;
 
 // Configuration (chargée depuis l'API)
 let INCUS_SERVER = '';
@@ -24,11 +34,17 @@ function extractHostname(url) {
 // Utiliser le proxy serveur pour éviter les problèmes CORS
 const INCUS_API_URL = '/api/instances';
 const CONFIG_API_URL = '/api/config';
+const MEETINGS_API_URL = '/api/meetings';
 
 // État des containers
 let allContainers = [];
 let currentMode = 'all'; // 'all' ou 'dev'
 let containersCache = new Map(); // Cache des éléments DOM des containers
+
+// État de la vue
+let currentView = 'containers'; // 'containers' ou 'calendar'
+let currentWeekStart = null; // Date de début de la semaine affichée
+let meetings = []; // Liste des meetings de la semaine
 
 // Initialiser les références aux éléments DOM
 function initDOMElements() {
@@ -38,9 +54,19 @@ function initDOMElements() {
     countEl = document.getElementById('count');
     modeSwitcher = document.getElementById('modeSwitcher');
     refreshTimer = document.getElementById('refreshTimer');
+    viewSwitcher = document.getElementById('viewSwitcher');
+    containersView = document.getElementById('containersView');
+    calendarView = document.getElementById('calendarView');
+    calendar = document.getElementById('calendar');
+    calendarHeader = document.getElementById("calendarHeader");
+    calendarWeekTitle = document.getElementById('calendarWeekTitle');
+    prevWeekBtn = document.getElementById('prevWeek');
+    nextWeekBtn = document.getElementById('nextWeek');
+    loadingText = document.getElementById('loadingText');
+    containersControls = document.getElementById('containersControls');
     
     // Vérifier que tous les éléments critiques existent
-    if (!grid || !loading || !error || !countEl || !modeSwitcher) {
+    if (!grid || !loading || !error || !countEl || !modeSwitcher || !viewSwitcher) {
         console.error('Erreur: Certains éléments DOM sont manquants');
         if (error) {
             error.textContent = 'Erreur: Éléments DOM manquants. Vérifiez que tous les éléments sont présents dans le HTML.';
@@ -79,6 +105,12 @@ async function init() {
         
         // Configurer le switcher de mode maintenant que les éléments DOM sont initialisés
         setupModeSwitcher();
+        
+        // Configurer le switcher de vue
+        setupViewSwitcher();
+        
+        // Initialiser la semaine actuelle pour le calendrier
+        initCurrentWeek();
         
         // Charger les containers une fois la config chargée
         await loadContainersFromAPI();
@@ -546,3 +578,563 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+// ==================== CALENDAR VIEW ====================
+
+// Initialiser la semaine actuelle (en UTC)
+function initCurrentWeek() {
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    currentWeekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + mondayOffset, 0, 0, 0, 0));
+}
+
+// Configurer le switcher de vue
+function setupViewSwitcher() {
+    if (!viewSwitcher) return;
+    
+    viewSwitcher.addEventListener('click', (e) => {
+        const clickedView = e.target.dataset.view;
+        if (clickedView && clickedView !== currentView) {
+            currentView = clickedView;
+            updateViewSwitcher();
+            switchView();
+        }
+    });
+    
+    // Navigation semaine précédente
+    if (prevWeekBtn) {
+        prevWeekBtn.addEventListener('click', () => {
+            currentWeekStart = new Date(Date.UTC(
+                currentWeekStart.getUTCFullYear(),
+                currentWeekStart.getUTCMonth(),
+                currentWeekStart.getUTCDate() - 7,
+                0, 0, 0, 0
+            ));
+            loadMeetings();
+        });
+    }
+    
+    // Navigation semaine suivante
+    if (nextWeekBtn) {
+        nextWeekBtn.addEventListener('click', () => {
+            currentWeekStart = new Date(Date.UTC(
+                currentWeekStart.getUTCFullYear(),
+                currentWeekStart.getUTCMonth(),
+                currentWeekStart.getUTCDate() + 7,
+                0, 0, 0, 0
+            ));
+            loadMeetings();
+        });
+    }
+}
+
+// Mettre à jour l'affichage du switcher de vue
+function updateViewSwitcher() {
+    if (!viewSwitcher) return;
+    
+    viewSwitcher.setAttribute('data-view', currentView);
+    const options = viewSwitcher.querySelectorAll('.view-option');
+    const indicator = viewSwitcher.querySelector('.view-switcher-indicator');
+    
+    options.forEach((option, index) => {
+        if (option.dataset.view === currentView) {
+            option.classList.add('active');
+            if (indicator) {
+                let left = 0;
+                for (let i = 0; i < index; i++) {
+                    left += options[i].offsetWidth;
+                }
+                const width = option.offsetWidth;
+                indicator.style.width = `${width}px`;
+                indicator.style.transform = `translateX(${left}px)`;
+            }
+        } else {
+            option.classList.remove('active');
+        }
+    });
+}
+
+// Basculer entre les vues
+function switchView() {
+    if (currentView === 'containers') {
+        if (containersView) containersView.style.display = '';
+        if (calendarView) calendarView.style.display = 'none';
+        if (containersControls) containersControls.style.display = '';
+        if (calendarHeader) calendarHeader.style.display = 'none';
+        if (countEl) countEl.style.display = '';
+    } else if (currentView === 'calendar') {
+        if (containersView) containersView.style.display = 'none';
+        if (calendarView) calendarView.style.display = '';
+        if (containersControls) containersControls.style.display = 'none';
+        if (calendarHeader) calendarHeader.style.display = 'flex';
+        if (countEl) countEl.style.display = 'none';
+        loadMeetings();
+        // Recalculer les hauteurs après le rendu
+        setTimeout(() => {
+            updateCalendarHeights();
+        }, 100);
+    }
+}
+
+// Mettre à jour les hauteurs des conteneurs de meetings
+function updateCalendarHeights() {
+    if (!calendar || currentView !== 'calendar') return;
+    
+    const calendarElement = calendar;
+    const calendarGridElement = calendar.querySelector('.calendar-grid');
+    const dayContainers = calendar.querySelectorAll('.calendar-day-meetings');
+    
+    if (calendarElement && calendarGridElement && dayContainers.length > 0) {
+        dayContainers.forEach(container => {
+            // Le conteneur est un item de la CSS grid (grid-row: 2 / -1), donc 100% suffit.
+            container.style.height = '100%';
+        });
+    }
+}
+
+// Écouter les changements de taille de fenêtre
+window.addEventListener('resize', () => {
+    if (currentView === 'calendar') {
+        updateCalendarHeights();
+    }
+});
+
+// Charger les meetings depuis l'API
+async function loadMeetings() {
+    if (!calendar || !loading || !error) return;
+    
+    try {
+        if (loading) {
+            loading.style.display = 'block';
+            if (loadingText) loadingText.textContent = 'Chargement des meetings...';
+        }
+        error.style.display = 'none';
+        
+        // Calculer la fin de la semaine (en UTC)
+        const weekEnd = new Date(Date.UTC(
+            currentWeekStart.getUTCFullYear(),
+            currentWeekStart.getUTCMonth(),
+            currentWeekStart.getUTCDate() + 6,
+            23, 59, 59, 999
+        ));
+        
+        const response = await fetch(`${MEETINGS_API_URL}?start=${currentWeekStart.toISOString()}&end=${weekEnd.toISOString()}`);
+        
+        if (!response.ok) {
+            throw new Error(`Erreur HTTP: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        meetings = data.meetings || [];
+        
+        updateCalendarWeekTitle();
+        renderCalendar();
+        
+    } catch (err) {
+        console.error('Erreur lors de la récupération des meetings:', err);
+        if (error) {
+            error.textContent = `Erreur lors de la récupération des meetings: ${err.message}`;
+            error.style.display = 'block';
+        }
+        meetings = [];
+    } finally {
+        if (loading) loading.style.display = 'none';
+    }
+}
+
+// Mettre à jour le titre de la semaine (en UTC)
+function updateCalendarWeekTitle() {
+    if (!calendarWeekTitle || !currentWeekStart) return;
+    
+    const weekEnd = new Date(Date.UTC(
+        currentWeekStart.getUTCFullYear(),
+        currentWeekStart.getUTCMonth(),
+        currentWeekStart.getUTCDate() + 6,
+        0, 0, 0, 0
+    ));
+    
+    const options = { day: 'numeric', month: 'long', timeZone: 'UTC' };
+    const startStr = currentWeekStart.toLocaleDateString('fr-FR', options);
+    const endStr = weekEnd.toLocaleDateString('fr-FR', options);
+    
+    // Vérifier si c'est la semaine actuelle (en UTC)
+    const now = new Date();
+    const dayOfWeek = now.getUTCDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const nowWeekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + mondayOffset, 0, 0, 0, 0));
+    
+    const isCurrentWeek = currentWeekStart.getTime() === nowWeekStart.getTime();
+    
+    calendarWeekTitle.textContent = isCurrentWeek 
+        ? `Semaine actuelle - ${startStr} au ${endStr}`
+        : `${startStr} au ${endStr}`;
+}
+
+// Calculer les positions et largeurs des meetings qui se chevauchent pour un jour
+function calculateMeetingPositions(dayMeetings) {
+    if (dayMeetings.length === 0) return [];
+    
+    // Préparer les meetings avec leurs dates de début et fin
+    const preparedMeetings = dayMeetings.map(meeting => {
+        const start = new Date(meeting.meeting_start_at);
+        const duration = meeting.meeting_duration_minutes || 30;
+        const end = new Date(start.getTime() + duration * 60 * 1000);
+        return { ...meeting, start, end, duration };
+    }).sort((a, b) => a.start - b.start);
+    
+    // Pour chaque meeting, trouver tous ceux qui se chevauchent avec lui
+    const positionedMeetings = preparedMeetings.map(meeting => {
+        // Trouver tous les meetings qui se chevauchent avec ce meeting
+        const overlapping = preparedMeetings.filter(other => 
+            meeting.start < other.end && other.start < meeting.end
+        );
+        
+        // Trier les meetings qui se chevauchent par heure de début
+        const sortedOverlapping = [...overlapping].sort((a, b) => a.start - b.start);
+        
+        // Trouver la position de ce meeting dans le groupe qui se chevauche
+        const position = sortedOverlapping.findIndex(m => m === meeting);
+        const maxConcurrent = sortedOverlapping.length;
+        
+        // Calculer la largeur (chaque meeting prend 1/n de l'espace disponible)
+        const width = 1 / maxConcurrent;
+        
+        return {
+            ...meeting,
+            position: position / maxConcurrent,
+            width: width
+        };
+    });
+    
+    return positionedMeetings;
+}
+
+// Rendre le calendrier
+function renderCalendar() {
+    if (!calendar) return;
+    
+    // Créer la structure du calendrier
+    const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    const hours = Array.from({ length: 13 }, (_, i) => i + 7); // 7-19
+    
+    // Grouper les meetings par jour (en UTC)
+    const meetingsByDay = {};
+    days.forEach((day, dayIndex) => {
+        const dayDate = new Date(Date.UTC(
+            currentWeekStart.getUTCFullYear(),
+            currentWeekStart.getUTCMonth(),
+            currentWeekStart.getUTCDate() + dayIndex,
+            0, 0, 0, 0
+        ));
+        const dayEnd = new Date(Date.UTC(
+            currentWeekStart.getUTCFullYear(),
+            currentWeekStart.getUTCMonth(),
+            currentWeekStart.getUTCDate() + dayIndex,
+            23, 59, 59, 999
+        ));
+        
+        meetingsByDay[dayIndex] = meetings.filter(meeting => {
+            if (!meeting.meeting_start_at) return false;
+            const meetingStart = new Date(meeting.meeting_start_at);
+            return meetingStart >= dayDate && meetingStart <= dayEnd;
+        });
+    });
+    
+    // Calculer les positions des meetings pour chaque jour
+    const positionedMeetingsByDay = {};
+    Object.keys(meetingsByDay).forEach(dayIndex => {
+        positionedMeetingsByDay[dayIndex] = calculateMeetingPositions(meetingsByDay[dayIndex]);
+    });
+    
+    let html = '<div class="calendar-grid">';
+
+    // Coin haut-gauche (vide) + en-têtes des jours en colonnes (en UTC)
+    html += '<div class="calendar-time-column calendar-corner"></div>';
+    days.forEach((day, dayIndex) => {
+        const dayDate = new Date(Date.UTC(
+            currentWeekStart.getUTCFullYear(),
+            currentWeekStart.getUTCMonth(),
+            currentWeekStart.getUTCDate() + dayIndex,
+            0, 0, 0, 0
+        ));
+        const isToday = isSameDay(dayDate, new Date());
+        const gridColumn = dayIndex + 2; // 1 = colonne des heures
+        const meetingCount = meetingsByDay[dayIndex]?.length || 0;
+
+        html += `<div class="calendar-day-header ${isToday ? 'today' : ''}" style="grid-row: 1; grid-column: ${gridColumn};">
+            <div class="day-name">${day} <span class="meeting-count">${meetingCount}</span></div>
+        </div>`;
+    });
+
+    // Grille: heures (lignes) × jours (colonnes) - UI allégée avec une ligne par heure
+    hours.forEach((hour, hourIndex) => {
+        const gridRow = hourIndex + 2; // 1 = en-tête
+
+        // Afficher uniquement l'heure (ex: "08h" au lieu de "08:00" et "08:30")
+        const timeStr = `${String(hour).padStart(2, '0')}h`;
+        html += `<div class="calendar-time-cell" style="grid-row: ${gridRow}; grid-column: 1;">${timeStr}</div>`;
+
+        days.forEach((day, dayIndex) => {
+            // Pour la détection "now", vérifier si on est dans cette heure (peu importe les minutes)
+            const dayDate = new Date(Date.UTC(
+                currentWeekStart.getUTCFullYear(),
+                currentWeekStart.getUTCMonth(),
+                currentWeekStart.getUTCDate() + dayIndex,
+                hour, 0, 0, 0
+            ));
+
+            const now = new Date();
+            const isNow = isSameDay(dayDate, now) &&
+                         dayDate.getUTCHours() === now.getUTCHours();
+
+            const gridColumn = dayIndex + 2;
+            html += `<div class="calendar-cell ${isNow ? 'now' : ''}" style="grid-row: ${gridRow}; grid-column: ${gridColumn};"></div>`;
+        });
+    });
+
+    html += '</div>';
+    calendar.innerHTML = html;
+    
+    // Attendre que le DOM soit mis à jour pour calculer les hauteurs
+    setTimeout(() => {
+        // Ajouter les meetings avec positionnement absolu dans chaque colonne de jour
+        Object.keys(positionedMeetingsByDay).forEach(dayIndex => {
+            const dayMeetings = positionedMeetingsByDay[dayIndex];
+            if (dayMeetings.length === 0) return;
+            
+            // Créer un conteneur pour les meetings de ce jour qui couvre toute la colonne
+            const dayContainer = document.createElement('div');
+            dayContainer.className = 'calendar-day-meetings';
+            dayContainer.setAttribute('data-day-index', dayIndex);
+            dayContainer.style.gridColumn = `${parseInt(dayIndex) + 2}`;
+            dayContainer.style.gridRow = '2 / -1';
+            dayContainer.style.pointerEvents = 'none';
+            dayContainer.style.zIndex = '10';
+            dayContainer.style.padding = '0';
+            dayContainer.style.margin = '0';
+            dayContainer.style.width = '100%';
+            dayContainer.style.maxWidth = '100%';
+            dayContainer.style.height = '100%';
+            dayContainer.style.overflow = 'hidden';
+            dayContainer.style.boxSizing = 'border-box';
+            dayContainer.style.clipPath = 'inset(0)';
+            
+            // Ajouter le conteneur au grid
+            const calendarGrid = calendar.querySelector('.calendar-grid');
+            if (calendarGrid) {
+                calendarGrid.appendChild(dayContainer);
+            }
+        
+        dayMeetings.forEach(meeting => {
+            const meetingStart = new Date(meeting.meeting_start_at);
+            const duration = meeting.duration || 30;
+            const startMinutes = meetingStart.getUTCHours() * 60 + meetingStart.getUTCMinutes();
+            const startSlot = (startMinutes - 7 * 60) / 30; // Position précise en slots (en UTC) - plage 7h-19h
+            const heightSlots = duration / 30;
+            
+            if (startSlot < 0 || startSlot >= 26) return; // Hors de la plage 7h-19h (13 heures × 2 créneaux = 26 slots)
+            
+            const identity = meeting.identities;
+            const bookerName = identity?.fullname || meeting.participant_email || 'Inconnu';
+            const company = identity?.company || '';
+            const title = meeting.meeting_title || 'Meeting';
+            
+            const meetingElement = document.createElement('div');
+            meetingElement.className = 'calendar-meeting';
+            const leftPercent = meeting.position * 100;
+            const widthPercent = meeting.width * 100;
+            
+            // S'assurer que le meeting ne dépasse jamais 100% de la largeur du conteneur
+            const maxLeft = 100 - widthPercent;
+            const clampedLeft = Math.min(leftPercent, maxLeft);
+            const clampedWidth = Math.min(widthPercent, 100 - clampedLeft);
+            
+            meetingElement.style.position = 'absolute';
+            meetingElement.style.left = `${clampedLeft}%`;
+            meetingElement.style.width = `${clampedWidth}%`;
+            meetingElement.style.maxWidth = `${100 - clampedLeft}%`;
+            meetingElement.style.top = `${startSlot * 28}px`;
+            meetingElement.style.height = `${heightSlots * 28}px`;
+            meetingElement.style.zIndex = meeting.position + 1;
+            meetingElement.style.pointerEvents = 'auto';
+            meetingElement.style.boxSizing = 'border-box';
+            meetingElement.style.paddingLeft = '4px';
+            meetingElement.style.paddingRight = '4px';
+            meetingElement.style.overflow = 'hidden';
+            meetingElement.title = `${title} - ${bookerName}${company ? ' (' + company + ')' : ''}`;
+            
+            meetingElement.innerHTML = `
+                <div class="meeting-title">${title}</div>
+                <div class="meeting-booker">${bookerName}${company ? ` • ${company}` : ''}</div>
+            `;
+            
+            // Ajouter l'event listener pour ouvrir la popup
+            meetingElement.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showMeetingPopup(meeting);
+            });
+            
+            dayContainer.appendChild(meetingElement);
+        });
+        });
+        
+        // Mettre à jour les hauteurs après le rendu
+        updateCalendarHeights();
+    }, 0);
+}
+
+// Vérifier si deux dates sont le même jour (en UTC)
+function isSameDay(date1, date2) {
+    return date1.getUTCFullYear() === date2.getUTCFullYear() &&
+           date1.getUTCMonth() === date2.getUTCMonth() &&
+           date1.getUTCDate() === date2.getUTCDate();
+}
+
+// Afficher la popup avec les détails complets du meeting
+function showMeetingPopup(meeting) {
+    const popup = document.getElementById('meetingPopup');
+    const popupTitle = popup.querySelector('.meeting-popup-title');
+    const popupDateTime = document.getElementById('meetingPopupDateTime');
+    const popupCreatedAt = document.getElementById('meetingPopupCreatedAt');
+    const popupBooker = document.getElementById('meetingPopupBooker');
+    const popupEmail = document.getElementById('meetingPopupEmail');
+    const popupUrl = document.getElementById('meetingPopupUrl');
+    const popupClose = popup.querySelector('.meeting-popup-close');
+    const popupOverlay = popup.querySelector('.meeting-popup-overlay');
+    
+    if (!popup) return;
+    
+    // Debug: afficher la structure complète du meeting
+    console.log('Meeting data:', {
+        id: meeting.id,
+        identity_id: meeting.identity_id,
+        identities: meeting.identities,
+        identitiesType: typeof meeting.identities,
+        isArray: Array.isArray(meeting.identities)
+    });
+    
+    // Récupérer les informations du meeting
+    const meetingStart = new Date(meeting.meeting_start_at);
+    // Récupérer l'identité (peut être un objet, null, ou un tableau selon Supabase)
+    const identity = meeting.identities; // Récupéré via la relation identity_id depuis Supabase
+    const identityId = meeting.identity_id; // ID de l'identité depuis la table meetings
+    
+    const bookerName = identity?.fullname || meeting.participant_email || 'Inconnu';
+    const company = identity?.company || '';
+    const title = meeting.meeting_title || 'Meeting';
+    const organizerEmail = meeting.participant_email || ''; // Email de l'organisateur (participant_email)
+    
+    // Email de mon identité : récupéré depuis identity_id → identities.email
+    // Gérer le cas où identities peut être null, un objet, ou un tableau vide []
+    let identityEmail = '';
+    if (identity) {
+        if (Array.isArray(identity)) {
+            // Si c'est un tableau, prendre le premier élément
+            identityEmail = identity.length > 0 ? (identity[0]?.email || '') : '';
+        } else if (typeof identity === 'object' && identity !== null) {
+            // Si c'est un objet
+            identityEmail = identity.email || '';
+        }
+    }
+    
+    // Si identities est null mais qu'on a un identity_id, la relation Supabase n'a pas fonctionné
+    if (!identity && identityId) {
+        console.warn('⚠️ Relation identities non chargée pour identity_id:', identityId, 'meeting:', meeting.id);
+    }
+    
+    // Debug pour identifier le problème
+    if (!identityEmail && identityId) {
+        console.error('❌ Email de l\'identité manquant:', {
+            meetingId: meeting.id,
+            meetingTitle: meeting.meeting_title,
+            identityId: identityId,
+            identity: identity,
+            identityType: typeof identity,
+            isArray: Array.isArray(identity)
+        });
+    }
+    const meetingUrl = meeting.meeting_url || '';
+    
+    // Formater la date et l'heure (en UTC)
+    const dateOptions = { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        timeZone: 'UTC'
+    };
+    const timeOptions = { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        timeZone: 'UTC'
+    };
+    
+    const dateStr = meetingStart.toLocaleDateString('fr-FR', dateOptions);
+    const timeStr = meetingStart.toLocaleTimeString('fr-FR', timeOptions);
+    const dateTimeStr = `${dateStr} à ${timeStr} UTC`;
+    
+    // Formater la date de création (depuis created_at de la table meetings)
+    let createdAtStr = 'Non renseigné';
+    if (meeting.created_at) {
+        const createdAt = new Date(meeting.created_at);
+        const createdAtDateStr = createdAt.toLocaleDateString('fr-FR', dateOptions);
+        const createdAtTimeStr = createdAt.toLocaleTimeString('fr-FR', timeOptions);
+        createdAtStr = `${createdAtDateStr} à ${createdAtTimeStr}`;
+    } else {
+        console.warn('Meeting created_at manquant:', meeting.id, meeting);
+    }
+    
+    // Remplir la popup
+    popupTitle.textContent = title;
+    popupDateTime.textContent = dateTimeStr;
+    popupCreatedAt.textContent = createdAtStr;
+    // Organisateur : afficher uniquement l'email de l'organisateur
+    popupBooker.textContent = organizerEmail || 'Non renseigné';
+    // Email : afficher l'email de mon identité (depuis identity_id → identities.email)
+    popupEmail.textContent = identityEmail || 'Non renseigné';
+    
+    // Debug: vérifier les données
+    if (!meeting.created_at) {
+        console.warn('Meeting created_at manquant:', meeting.id, meeting);
+    }
+    if (!identityEmail && meeting.identity_id) {
+        console.warn('Email de l\'identité manquant pour identity_id:', meeting.identity_id, 'identity:', identity);
+    }
+    
+    // Afficher le lien du meeting
+    if (meetingUrl) {
+        popupUrl.href = meetingUrl;
+        popupUrl.textContent = meetingUrl;
+        popupUrl.style.pointerEvents = 'auto';
+        popupUrl.style.color = '#4a9eff';
+    } else {
+        popupUrl.textContent = 'Non renseigné';
+        popupUrl.href = '#';
+        popupUrl.style.pointerEvents = 'none';
+        popupUrl.style.color = '#666';
+    }
+    
+    // Afficher la popup
+    popup.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    
+    // Fermer la popup
+    const closePopup = () => {
+        popup.style.display = 'none';
+        document.body.style.overflow = '';
+        popupClose.removeEventListener('click', closePopup);
+        popupOverlay.removeEventListener('click', closePopup);
+    };
+    
+    popupClose.addEventListener('click', closePopup);
+    popupOverlay.addEventListener('click', closePopup);
+    
+    // Fermer avec la touche Escape
+    const handleEscape = (e) => {
+        if (e.key === 'Escape') {
+            closePopup();
+            document.removeEventListener('keydown', handleEscape);
+        }
+    };
+    document.addEventListener('keydown', handleEscape);
+}
