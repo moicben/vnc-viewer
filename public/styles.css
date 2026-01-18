@@ -117,6 +117,7 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
+    width: 100%;
 }
 
 .count {
@@ -369,7 +370,7 @@ body {
 .calendar-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     margin-left: auto;
     padding: 0;
     background: transparent;
@@ -379,9 +380,18 @@ body {
 .calendar-week-title {
     font-size: 13px;
     font-weight: 400;
-    color: #666;
+    color: rgba(153, 153, 153, 1);
     white-space: nowrap;
     text-align: center;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.calendar-week-title:hover {
+    background: #1a1a1a;
+    color: #e0e0e0;
 }
 
 .calendar-nav-btn {
@@ -412,6 +422,41 @@ body {
     background: #1a1a1a;
 }
 
+.identity-filter {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    border: 1px solid #2a2a2a;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 400;
+    font-family: inherit;
+    transition: all 0.2s ease;
+    min-width: 150px;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 32px;
+}
+
+.identity-filter:hover {
+    border-color: #333;
+    background-color: #1a1a1a;
+}
+
+.identity-filter:focus {
+    outline: none;
+    border-color: #4a9eff;
+    background-color: #1a1a1a;
+}
+
+.identity-filter option {
+    background: #1a1a1a;
+    color: #e0e0e0;
+}
+
 .calendar {
     background: #111111;
     border-radius: 8px;
@@ -428,7 +473,7 @@ body {
 
 .calendar-grid {
     display: grid;
-    grid-template-columns: 70px repeat(7, 1fr);
+    grid-template-columns: 70px repeat(4, 1fr);
     grid-template-rows: 56px repeat(10, 1fr);
     width: 100%;
     height: 100%;
@@ -642,7 +687,7 @@ body {
     }
     
     .calendar-grid {
-        grid-template-columns: 60px repeat(7, minmax(100px, 1fr));
+        grid-template-columns: 60px repeat(4, minmax(100px, 1fr));
     }
     
     .calendar-time-cell {

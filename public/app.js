@@ -15,6 +15,7 @@ let prevWeekBtn = null;
 let nextWeekBtn = null;
 let loadingText = null;
 let containersControls = null;
+let identityFilter = null;
 
 // Configuration (chargée depuis l'API)
 let INCUS_SERVER = '';
@@ -43,8 +44,10 @@ let containersCache = new Map(); // Cache des éléments DOM des containers
 
 // État de la vue
 let currentView = 'containers'; // 'containers' ou 'calendar'
-let currentWeekStart = null; // Date de début de la semaine affichée
-let meetings = []; // Liste des meetings de la semaine
+let currentDate = null; // Date de début de la vue (aujourd'hui + 3 jours suivants)
+let meetings = []; // Liste des meetings de la période affichée
+let filteredMeetings = []; // Liste des meetings filtrés
+let selectedIdentityFilter = 'all'; // Filtre d'identité sélectionné
 
 // Initialiser les références aux éléments DOM
 function initDOMElements() {
@@ -64,6 +67,7 @@ function initDOMElements() {
     nextWeekBtn = document.getElementById('nextWeek');
     loadingText = document.getElementById('loadingText');
     containersControls = document.getElementById('containersControls');
+    identityFilter = document.getElementById('identityFilter');
     
     // Vérifier que tous les éléments critiques existent
     if (!grid || !loading || !error || !countEl || !modeSwitcher || !viewSwitcher) {
@@ -580,12 +584,14 @@ document.addEventListener('visibilitychange', () => {
 
 // ==================== CALENDAR VIEW ====================
 
-// Convertir une date UTC en heure Makassar (UTC+8)
+// Convertir une date en heure Makassar (UTC+8)
 function getMakassarTime(date) {
-    // Créer une nouvelle date avec l'offset Makassar (UTC+8)
-    const makassarOffset = 8 * 60; // 8 heures en minutes
-    const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
-    const makassarTime = new Date(utcTime + (makassarOffset * 60000));
+    // Convertir la date en UTC d'abord
+    // getTimezoneOffset() retourne l'offset en minutes depuis UTC (négatif pour les fuseaux à l'est)
+    // On convertit d'abord en UTC, puis on ajoute 8 heures pour Makassar
+    const utcTime = date.getTime() - (date.getTimezoneOffset() * 60000);
+    const makassarOffsetMs = 8 * 60 * 60 * 1000; // 8 heures en millisecondes
+    const makassarTime = new Date(utcTime + makassarOffsetMs);
     return makassarTime;
 }
 
@@ -594,12 +600,11 @@ function getCurrentMakassarTime() {
     return getMakassarTime(new Date());
 }
 
-// Initialiser la semaine actuelle (en UTC)
+// Initialiser la date actuelle (aujourd'hui)
 function initCurrentWeek() {
     const now = new Date();
-    const dayOfWeek = now.getUTCDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    currentWeekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + mondayOffset, 0, 0, 0, 0));
+    now.setHours(0, 0, 0, 0);
+    currentDate = new Date(now);
 }
 
 // Configurer le switcher de vue
@@ -615,29 +620,41 @@ function setupViewSwitcher() {
         }
     });
     
-    // Navigation semaine précédente
+    // Navigation jour précédent
     if (prevWeekBtn) {
         prevWeekBtn.addEventListener('click', () => {
-            currentWeekStart = new Date(Date.UTC(
-                currentWeekStart.getUTCFullYear(),
-                currentWeekStart.getUTCMonth(),
-                currentWeekStart.getUTCDate() - 7,
-                0, 0, 0, 0
-            ));
+            if (!currentDate) {
+                initCurrentWeek();
+            }
+            currentDate = new Date(currentDate);
+            currentDate.setDate(currentDate.getDate() - 1);
+            currentDate.setHours(0, 0, 0, 0);
             loadMeetings();
         });
     }
     
-    // Navigation semaine suivante
+    // Navigation jour suivant
     if (nextWeekBtn) {
         nextWeekBtn.addEventListener('click', () => {
-            currentWeekStart = new Date(Date.UTC(
-                currentWeekStart.getUTCFullYear(),
-                currentWeekStart.getUTCMonth(),
-                currentWeekStart.getUTCDate() + 7,
-                0, 0, 0, 0
-            ));
+            if (!currentDate) {
+                initCurrentWeek();
+            }
+            currentDate = new Date(currentDate);
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(0, 0, 0, 0);
             loadMeetings();
+        });
+    }
+    
+    // Ajouter un bouton "Aujourd'hui" si nécessaire
+    // (on peut aussi utiliser le titre pour naviguer)
+    
+    // Configurer le filtre d'identité
+    if (identityFilter) {
+        identityFilter.addEventListener('change', (e) => {
+            selectedIdentityFilter = e.target.value;
+            applyIdentityFilter();
+            renderCalendar();
         });
     }
 }
@@ -763,9 +780,67 @@ window.addEventListener('resize', () => {
     }
 });
 
+// Extraire les identités uniques des meetings
+function extractUniqueIdentities(meetings) {
+    const identities = new Set();
+    meetings.forEach(meeting => {
+        const identity = meeting.identities;
+        const fullname = identity?.fullname;
+        if (fullname) {
+            identities.add(fullname);
+        }
+    });
+    return Array.from(identities).sort();
+}
+
+// Mettre à jour le select avec les identités disponibles
+function updateIdentityFilter(meetings) {
+    if (!identityFilter) return;
+    
+    const currentValue = identityFilter.value;
+    const identities = extractUniqueIdentities(meetings);
+    
+    // Garder l'option "All" et vider les autres
+    identityFilter.innerHTML = '<option value="all">All</option>';
+    
+    // Ajouter les identités
+    identities.forEach(fullname => {
+        const option = document.createElement('option');
+        option.value = fullname;
+        option.textContent = fullname;
+        identityFilter.appendChild(option);
+    });
+    
+    // Restaurer la valeur sélectionnée si elle existe toujours
+    if (currentValue === 'all' || identities.includes(currentValue)) {
+        identityFilter.value = currentValue;
+        selectedIdentityFilter = currentValue;
+    } else {
+        identityFilter.value = 'all';
+        selectedIdentityFilter = 'all';
+    }
+}
+
+// Appliquer le filtre d'identité
+function applyIdentityFilter() {
+    if (selectedIdentityFilter === 'all') {
+        filteredMeetings = meetings;
+    } else {
+        filteredMeetings = meetings.filter(meeting => {
+            const identity = meeting.identities;
+            const fullname = identity?.fullname;
+            return fullname === selectedIdentityFilter;
+        });
+    }
+}
+
 // Charger les meetings depuis l'API
 async function loadMeetings() {
     if (!calendar || !loading || !error) return;
+    
+    if (!currentDate) {
+        initCurrentWeek();
+    }
     
     try {
         if (loading) {
@@ -774,15 +849,22 @@ async function loadMeetings() {
         }
         error.style.display = 'none';
         
-        // Calculer la fin de la semaine (en UTC)
-        const weekEnd = new Date(Date.UTC(
-            currentWeekStart.getUTCFullYear(),
-            currentWeekStart.getUTCMonth(),
-            currentWeekStart.getUTCDate() + 6,
+        // Calculer la fin de la période (4 jours : aujourd'hui + 3 jours suivants) en UTC
+        const startDateUTC = new Date(Date.UTC(
+            currentDate.getFullYear(),
+            currentDate.getMonth(),
+            currentDate.getDate(),
+            0, 0, 0, 0
+        ));
+        
+        const endDateUTC = new Date(Date.UTC(
+            currentDate.getFullYear(),
+            currentDate.getMonth(),
+            currentDate.getDate() + 3,
             23, 59, 59, 999
         ));
         
-        const response = await fetch(`${MEETINGS_API_URL}?start=${currentWeekStart.toISOString()}&end=${weekEnd.toISOString()}`);
+        const response = await fetch(`${MEETINGS_API_URL}?start=${startDateUTC.toISOString()}&end=${endDateUTC.toISOString()}`);
         
         if (!response.ok) {
             throw new Error(`Erreur HTTP: ${response.status}`);
@@ -790,6 +872,12 @@ async function loadMeetings() {
         
         const data = await response.json();
         meetings = data.meetings || [];
+        
+        // Mettre à jour le filtre d'identité avec les nouveaux meetings
+        updateIdentityFilter(meetings);
+        
+        // Appliquer le filtre
+        applyIdentityFilter();
         
         updateCalendarWeekTitle();
         renderCalendar();
@@ -801,37 +889,42 @@ async function loadMeetings() {
             error.style.display = 'block';
         }
         meetings = [];
+        filteredMeetings = [];
     } finally {
         if (loading) loading.style.display = 'none';
     }
 }
 
-// Mettre à jour le titre de la semaine (en UTC)
+// Mettre à jour le titre de la période (4 jours)
 function updateCalendarWeekTitle() {
-    if (!calendarWeekTitle || !currentWeekStart) return;
+    if (!calendarWeekTitle || !currentDate) return;
     
-    const weekEnd = new Date(Date.UTC(
-        currentWeekStart.getUTCFullYear(),
-        currentWeekStart.getUTCMonth(),
-        currentWeekStart.getUTCDate() + 6,
-        0, 0, 0, 0
-    ));
+    const endDate = new Date(currentDate);
+    endDate.setDate(currentDate.getDate() + 3);
+    endDate.setHours(0, 0, 0, 0);
     
-    const options = { day: 'numeric', month: 'long', timeZone: 'UTC' };
-    const startStr = currentWeekStart.toLocaleDateString('fr-FR', options);
-    const endStr = weekEnd.toLocaleDateString('fr-FR', options);
+    const options = { day: 'numeric', month: 'long' };
+    const startStr = currentDate.toLocaleDateString('fr-FR', options);
+    const endStr = endDate.toLocaleDateString('fr-FR', options);
     
-    // Vérifier si c'est la semaine actuelle (en UTC)
-    const now = new Date();
-    const dayOfWeek = now.getUTCDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const nowWeekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + mondayOffset, 0, 0, 0, 0));
+    // Vérifier si aujourd'hui est dans la plage
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isTodayInRange = today >= currentDate && today <= endDate;
     
-    const isCurrentWeek = currentWeekStart.getTime() === nowWeekStart.getTime();
+    if (isTodayInRange && currentDate.getTime() === today.getTime()) {
+        calendarWeekTitle.textContent = `Aujourd'hui - ${endStr}`;
+    } else {
+        calendarWeekTitle.textContent = `${startStr} - ${endStr}`;
+    }
     
-    calendarWeekTitle.textContent = isCurrentWeek 
-        ? `Semaine actuelle - ${startStr} au ${endStr}`
-        : `${startStr} au ${endStr}`;
+    // Rendre le titre cliquable pour revenir à aujourd'hui
+    calendarWeekTitle.style.cursor = 'pointer';
+    calendarWeekTitle.title = 'Cliquer pour revenir à aujourd\'hui';
+    calendarWeekTitle.onclick = () => {
+        initCurrentWeek();
+        loadMeetings();
+    };
 }
 
 // Calculer les positions et largeurs des meetings qui se chevauchent pour un jour
@@ -877,30 +970,59 @@ function calculateMeetingPositions(dayMeetings) {
 function renderCalendar() {
     if (!calendar) return;
     
-    // Créer la structure du calendrier
-    const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    if (!currentDate) {
+        initCurrentWeek();
+    }
+    
+    // Créer la structure du calendrier - seulement 4 jours
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
     const hours = Array.from({ length: 10 }, (_, i) => i + 7); // 7-16
     
-    // Grouper les meetings par jour (en UTC)
-    const meetingsByDay = {};
-    days.forEach((day, dayIndex) => {
-        const dayDate = new Date(Date.UTC(
-            currentWeekStart.getUTCFullYear(),
-            currentWeekStart.getUTCMonth(),
-            currentWeekStart.getUTCDate() + dayIndex,
+    // Créer les 4 jours à afficher (aujourd'hui + 3 jours suivants) en UTC
+    const daysToShow = [];
+    for (let i = 0; i < 4; i++) {
+        // Créer la date en UTC pour la comparaison avec les meetings
+        const dayDateUTC = new Date(Date.UTC(
+            currentDate.getFullYear(),
+            currentDate.getMonth(),
+            currentDate.getDate() + i,
             0, 0, 0, 0
         ));
-        const dayEnd = new Date(Date.UTC(
-            currentWeekStart.getUTCFullYear(),
-            currentWeekStart.getUTCMonth(),
-            currentWeekStart.getUTCDate() + dayIndex,
+        
+        // Créer aussi une date locale pour l'affichage
+        const dayDateLocal = new Date(currentDate);
+        dayDateLocal.setDate(currentDate.getDate() + i);
+        dayDateLocal.setHours(0, 0, 0, 0);
+        
+        const dayName = dayNames[dayDateLocal.getDay()];
+        const dayNumber = dayDateLocal.getDate();
+        const month = dayDateLocal.toLocaleDateString('fr-FR', { month: 'short' });
+        
+        daysToShow.push({
+            dateUTC: dayDateUTC,  // Pour la comparaison avec les meetings (UTC)
+            dateLocal: dayDateLocal,  // Pour l'affichage
+            name: dayName,
+            display: `${dayName} ${dayNumber} ${month}`
+        });
+    }
+    
+    // Grouper les meetings par jour en utilisant UTC
+    const meetingsByDay = {};
+    daysToShow.forEach((dayInfo, dayIndex) => {
+        // Utiliser UTC pour la comparaison avec les meetings
+        const dayStartUTC = new Date(dayInfo.dateUTC);
+        const dayEndUTC = new Date(Date.UTC(
+            dayInfo.dateUTC.getUTCFullYear(),
+            dayInfo.dateUTC.getUTCMonth(),
+            dayInfo.dateUTC.getUTCDate(),
             23, 59, 59, 999
         ));
         
-        meetingsByDay[dayIndex] = meetings.filter(meeting => {
+        meetingsByDay[dayIndex] = filteredMeetings.filter(meeting => {
             if (!meeting.meeting_start_at) return false;
             const meetingStart = new Date(meeting.meeting_start_at);
-            return meetingStart >= dayDate && meetingStart <= dayEnd;
+            // Comparer en UTC
+            return meetingStart >= dayStartUTC && meetingStart <= dayEndUTC;
         });
     });
     
@@ -912,21 +1034,16 @@ function renderCalendar() {
     
     let html = '<div class="calendar-grid">';
 
-    // Coin haut-gauche (vide) + en-têtes des jours en colonnes (en UTC)
+    // Coin haut-gauche (vide) + en-têtes des jours en colonnes
     html += '<div class="calendar-time-column calendar-corner"></div>';
-    days.forEach((day, dayIndex) => {
-        const dayDate = new Date(Date.UTC(
-            currentWeekStart.getUTCFullYear(),
-            currentWeekStart.getUTCMonth(),
-            currentWeekStart.getUTCDate() + dayIndex,
-            0, 0, 0, 0
-        ));
-        const isToday = isSameDay(dayDate, new Date());
+    daysToShow.forEach((dayInfo, dayIndex) => {
+        // Comparer avec la date locale pour l'affichage "today"
+        const isToday = isSameDay(dayInfo.dateLocal, new Date());
         const gridColumn = dayIndex + 2; // 1 = colonne des heures
         const meetingCount = meetingsByDay[dayIndex]?.length || 0;
 
         html += `<div class="calendar-day-header ${isToday ? 'today' : ''}" style="grid-row: 1; grid-column: ${gridColumn};">
-            <div class="day-name">${day} <span class="meeting-count">${meetingCount}</span></div>
+            <div class="day-name">${dayInfo.display} <span class="meeting-count">${meetingCount}</span></div>
         </div>`;
     });
 
@@ -938,18 +1055,14 @@ function renderCalendar() {
         const timeStr = `${String(hour).padStart(2, '0')}h`;
         html += `<div class="calendar-time-cell" style="grid-row: ${gridRow}; grid-column: 1;">${timeStr}</div>`;
 
-        days.forEach((day, dayIndex) => {
+        daysToShow.forEach((dayInfo, dayIndex) => {
             // Pour la détection "now", vérifier si on est dans cette heure (peu importe les minutes)
-            const dayDate = new Date(Date.UTC(
-                currentWeekStart.getUTCFullYear(),
-                currentWeekStart.getUTCMonth(),
-                currentWeekStart.getUTCDate() + dayIndex,
-                hour, 0, 0, 0
-            ));
+            const dayDate = new Date(dayInfo.dateLocal);
+            dayDate.setHours(hour, 0, 0, 0);
 
             const now = new Date();
             const isNow = isSameDay(dayDate, now) &&
-                         dayDate.getUTCHours() === now.getUTCHours();
+                         dayDate.getHours() === now.getHours();
 
             const gridColumn = dayIndex + 2;
             html += `<div class="calendar-cell ${isNow ? 'now' : ''}" style="grid-row: ${gridRow}; grid-column: ${gridColumn};"></div>`;
@@ -1004,8 +1117,9 @@ function renderCalendar() {
         dayMeetings.forEach(meeting => {
             const meetingStart = new Date(meeting.meeting_start_at);
             const duration = meeting.duration || 30;
+            // Utiliser UTC pour le calcul de la position (les meetings sont en UTC)
             const startMinutes = meetingStart.getUTCHours() * 60 + meetingStart.getUTCMinutes();
-            const startSlot = (startMinutes - 7 * 60) / 30; // Position précise en slots (en UTC) - plage 7h-16h
+            const startSlot = (startMinutes - 7 * 60) / 30; // Position précise en slots - plage 7h-16h UTC
             const heightSlots = duration / 30;
             
             if (startSlot < 0 || startSlot >= 20) return; // Hors de la plage 7h-16h (10 heures × 2 créneaux = 20 slots)
@@ -1084,28 +1198,35 @@ function addCurrentTimeIndicator(calendarGrid, slotHeight) {
     // Vérifier si l'heure actuelle est dans la plage affichée (7h-16h)
     if (localHour < 7 || localHour >= 17) return;
     
-    // Trouver le jour actuel dans la semaine affichée (en fuseau horaire Makassar)
-    const makassarToday = new Date(makassarNow);
-    makassarToday.setHours(0, 0, 0, 0);
+    // Trouver le jour actuel dans la période affichée (4 jours)
+    // Utiliser UTC pour la comparaison avec les jours affichés (qui sont en UTC)
+    const todayUTC = new Date();
+    const todayUTCStart = new Date(Date.UTC(
+        todayUTC.getUTCFullYear(),
+        todayUTC.getUTCMonth(),
+        todayUTC.getUTCDate(),
+        0, 0, 0, 0
+    ));
     
-    // Convertir currentWeekStart (UTC) en date Makassar pour comparaison
+    // Trouver l'index du jour actuel dans les 4 jours affichés
     let currentDayIndex = -1;
-    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+    if (!currentDate) {
+        initCurrentWeek();
+    }
+    
+    for (let dayIndex = 0; dayIndex < 4; dayIndex++) {
+        // Créer la date du jour en UTC pour la comparaison
         const dayDateUTC = new Date(Date.UTC(
-            currentWeekStart.getUTCFullYear(),
-            currentWeekStart.getUTCMonth(),
-            currentWeekStart.getUTCDate() + dayIndex,
+            currentDate.getFullYear(),
+            currentDate.getMonth(),
+            currentDate.getDate() + dayIndex,
             0, 0, 0, 0
         ));
         
-        // Convertir en heure Makassar
-        const dayDateMakassar = getMakassarTime(dayDateUTC);
-        dayDateMakassar.setHours(0, 0, 0, 0);
-        
-        // Comparer les dates (année, mois, jour)
-        if (dayDateMakassar.getFullYear() === makassarToday.getFullYear() &&
-            dayDateMakassar.getMonth() === makassarToday.getMonth() &&
-            dayDateMakassar.getDate() === makassarToday.getDate()) {
+        // Comparer les dates en UTC
+        if (dayDateUTC.getUTCFullYear() === todayUTCStart.getUTCFullYear() &&
+            dayDateUTC.getUTCMonth() === todayUTCStart.getUTCMonth() &&
+            dayDateUTC.getUTCDate() === todayUTCStart.getUTCDate()) {
             currentDayIndex = dayIndex;
             break;
         }
@@ -1185,6 +1306,47 @@ function addCurrentTimeIndicator(calendarGrid, slotHeight) {
     
     // Mettre à jour la position toutes les minutes
     const updatePosition = () => {
+        // Vérifier que le jour actuel est toujours dans la vue (en UTC)
+        const todayUTC = new Date();
+        const todayUTCStart = new Date(Date.UTC(
+            todayUTC.getUTCFullYear(),
+            todayUTC.getUTCMonth(),
+            todayUTC.getUTCDate(),
+            0, 0, 0, 0
+        ));
+        
+        let dayIndex = -1;
+        if (currentDate) {
+            for (let i = 0; i < 4; i++) {
+                // Créer la date du jour en UTC pour la comparaison
+                const dayDateUTC = new Date(Date.UTC(
+                    currentDate.getFullYear(),
+                    currentDate.getMonth(),
+                    currentDate.getDate() + i,
+                    0, 0, 0, 0
+                ));
+                
+                // Comparer en UTC
+                if (dayDateUTC.getUTCFullYear() === todayUTCStart.getUTCFullYear() &&
+                    dayDateUTC.getUTCMonth() === todayUTCStart.getUTCMonth() &&
+                    dayDateUTC.getUTCDate() === todayUTCStart.getUTCDate()) {
+                    dayIndex = i;
+                    break;
+                }
+            }
+        }
+        
+        // Si le jour actuel n'est plus dans la vue, masquer l'indicateur
+        if (dayIndex === -1) {
+            timeIndicator.style.display = 'none';
+            return;
+        }
+        
+        // Mettre à jour la colonne si nécessaire
+        if (timeIndicator.style.gridColumn !== `${dayIndex + 2}`) {
+            timeIndicator.style.gridColumn = `${dayIndex + 2}`;
+        }
+        
         // Obtenir l'heure actuelle en fuseau horaire Makassar
         const makassarNow = getCurrentMakassarTime();
         const localHour = makassarNow.getHours();
@@ -1212,11 +1374,15 @@ function addCurrentTimeIndicator(calendarGrid, slotHeight) {
     updatePosition();
 }
 
-// Vérifier si deux dates sont le même jour (en UTC)
+// Vérifier si deux dates sont le même jour
 function isSameDay(date1, date2) {
-    return date1.getUTCFullYear() === date2.getUTCFullYear() &&
-           date1.getUTCMonth() === date2.getUTCMonth() &&
-           date1.getUTCDate() === date2.getUTCDate();
+    const d1 = new Date(date1);
+    const d2 = new Date(date2);
+    d1.setHours(0, 0, 0, 0);
+    d2.setHours(0, 0, 0, 0);
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
 }
 
 // Afficher la popup avec les détails complets du meeting

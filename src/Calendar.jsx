@@ -1,15 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
-import timeGridWeek from '@fullcalendar/timegrid';
+import timeGridPlugin from '@fullcalendar/timegrid';
 import frLocale from '@fullcalendar/core/locales/fr';
 
 const MEETINGS_API_URL = '/api/meetings';
 
-function Calendar({ currentWeekStart, onWeekChange }) {
+function Calendar({ currentDate, onDateChange }) {
   const calendarRef = useRef(null);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [currentViewDate, setCurrentViewDate] = useState(() => {
+    // Initialiser avec aujourd'hui
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  });
 
   // Fonction pour charger les meetings
   const loadMeetings = async (startDate, endDate) => {
@@ -19,11 +25,11 @@ function Calendar({ currentWeekStart, onWeekChange }) {
     setError(null);
     
     try {
-      const weekEnd = new Date(endDate);
-      weekEnd.setHours(23, 59, 59, 999);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
       
       const response = await fetch(
-        `${MEETINGS_API_URL}?start=${startDate.toISOString()}&end=${weekEnd.toISOString()}`
+        `${MEETINGS_API_URL}?start=${startDate.toISOString()}&end=${end.toISOString()}`
       );
       
       if (!response.ok) {
@@ -69,40 +75,105 @@ function Calendar({ currentWeekStart, onWeekChange }) {
     }
   };
 
-  // Charger les meetings quand la semaine change
+  // Calculer la date de début de la vue (aujourd'hui)
+  const getViewStartDate = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  };
+
+  // Calculer la date de fin de la vue (aujourd'hui + 3 jours)
+  const getViewEndDate = () => {
+    const end = new Date(currentViewDate);
+    end.setDate(currentViewDate.getDate() + 3);
+    end.setHours(23, 59, 59, 999);
+    return end;
+  };
+
+  // Charger les meetings quand la date change
   useEffect(() => {
-    if (currentWeekStart) {
-      const weekEnd = new Date(currentWeekStart);
-      weekEnd.setDate(currentWeekStart.getDate() + 6);
-      loadMeetings(currentWeekStart, weekEnd);
-    }
-  }, [currentWeekStart]);
+    const startDate = currentViewDate;
+    const endDate = getViewEndDate();
+    loadMeetings(startDate, endDate);
+  }, [currentViewDate]);
 
   // Gérer le changement de date dans FullCalendar
   const handleDatesSet = (dateInfo) => {
     const start = new Date(dateInfo.start);
     start.setHours(0, 0, 0, 0);
     
-    // S'assurer que c'est un lundi
-    const dayOfWeek = start.getDay();
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const monday = new Date(start);
-    monday.setDate(start.getDate() + mondayOffset);
-    monday.setHours(0, 0, 0, 0);
-    
-    // Notifier le composant parent du changement de semaine
-    if (onWeekChange && monday.getTime() !== currentWeekStart?.getTime()) {
-      onWeekChange(monday);
+    // Mettre à jour la date de vue si elle a changé
+    if (start.getTime() !== currentViewDate.getTime()) {
+      setCurrentViewDate(start);
+      if (onDateChange) {
+        onDateChange(start);
+      }
     }
   };
 
-  // Naviguer vers une semaine spécifique
+  // Naviguer vers une date spécifique
   useEffect(() => {
-    if (calendarRef.current && currentWeekStart) {
+    if (calendarRef.current && currentDate) {
       const calendarApi = calendarRef.current.getApi();
-      calendarApi.gotoDate(currentWeekStart);
+      const targetDate = new Date(currentDate);
+      targetDate.setHours(0, 0, 0, 0);
+      calendarApi.gotoDate(targetDate);
+      setCurrentViewDate(targetDate);
     }
-  }, [currentWeekStart]);
+  }, [currentDate]);
+
+  // Navigation précédent/suivant
+  const navigateDays = (days) => {
+    const newDate = new Date(currentViewDate);
+    newDate.setDate(currentViewDate.getDate() + days);
+    newDate.setHours(0, 0, 0, 0);
+    
+    if (calendarRef.current) {
+      const calendarApi = calendarRef.current.getApi();
+      calendarApi.gotoDate(newDate);
+    }
+    setCurrentViewDate(newDate);
+    if (onDateChange) {
+      onDateChange(newDate);
+    }
+  };
+
+  // Aller à aujourd'hui
+  const goToToday = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (calendarRef.current) {
+      const calendarApi = calendarRef.current.getApi();
+      calendarApi.gotoDate(today);
+    }
+    setCurrentViewDate(today);
+    if (onDateChange) {
+      onDateChange(today);
+    }
+  };
+
+  // Formater la plage de dates affichée
+  const formatDateRange = () => {
+    const start = new Date(currentViewDate);
+    const end = new Date(currentViewDate);
+    end.setDate(currentViewDate.getDate() + 3);
+    
+    const options = { day: 'numeric', month: 'long', timeZone: 'UTC' };
+    const startStr = start.toLocaleDateString('fr-FR', options);
+    const endStr = end.toLocaleDateString('fr-FR', options);
+    
+    // Vérifier si aujourd'hui est dans la plage
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isTodayInRange = today >= start && today <= end;
+    
+    if (isTodayInRange && start.getTime() === today.getTime()) {
+      return `Aujourd'hui - ${endStr}`;
+    }
+    
+    return `${startStr} - ${endStr}`;
+  };
 
   return (
     <div className="calendar-wrapper">
@@ -119,10 +190,109 @@ function Calendar({ currentWeekStart, onWeekChange }) {
           Erreur: {error}
         </div>
       )}
+      
+      {/* Contrôles de navigation */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        marginBottom: '16px',
+        padding: '0 24px'
+      }}>
+        <button
+          onClick={() => navigateDays(-1)}
+          className="calendar-nav-btn"
+          style={{
+            background: '#1a1a1a',
+            color: '#e0e0e0',
+            border: '1px solid #2a2a2a',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontFamily: 'inherit',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = '#222';
+            e.target.style.borderColor = '#333';
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = '#1a1a1a';
+            e.target.style.borderColor = '#2a2a2a';
+          }}
+        >
+          ←
+        </button>
+        
+        <button
+          onClick={goToToday}
+          className="calendar-today-btn"
+          style={{
+            background: '#1a1a1a',
+            color: '#e0e0e0',
+            border: '1px solid #2a2a2a',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            fontFamily: 'inherit',
+            transition: 'all 0.2s ease',
+            fontWeight: 500
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = '#222';
+            e.target.style.borderColor = '#333';
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = '#1a1a1a';
+            e.target.style.borderColor = '#2a2a2a';
+          }}
+        >
+          Aujourd'hui
+        </button>
+        
+        <span style={{
+          fontSize: '13px',
+          color: '#999',
+          minWidth: '200px',
+          textAlign: 'center'
+        }}>
+          {formatDateRange()}
+        </span>
+        
+        <button
+          onClick={() => navigateDays(1)}
+          className="calendar-nav-btn"
+          style={{
+            background: '#1a1a1a',
+            color: '#e0e0e0',
+            border: '1px solid #2a2a2a',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontFamily: 'inherit',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = '#222';
+            e.target.style.borderColor = '#333';
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = '#1a1a1a';
+            e.target.style.borderColor = '#2a2a2a';
+          }}
+        >
+          →
+        </button>
+      </div>
+
       <FullCalendar
         ref={calendarRef}
-        plugins={[timeGridWeek]}
-        initialView="timeGridWeek"
+        plugins={[timeGridPlugin]}
+        initialView="timeGridFourDay"
         locale={frLocale}
         headerToolbar={false}
         allDaySlot={false}
@@ -133,6 +303,21 @@ function Calendar({ currentWeekStart, onWeekChange }) {
         height="auto"
         events={events}
         datesSet={handleDatesSet}
+        initialDate={currentViewDate}
+        views={{
+          timeGridFourDay: {
+            type: 'timeGrid',
+            duration: { days: 4 },
+            buttonText: '4 jours'
+          }
+        }}
+        validRange={(nowDate) => {
+          // Permettre le défilement dans le passé et le futur
+          return {
+            start: null,
+            end: null
+          };
+        }}
         eventContent={(eventInfo) => {
           const { meetingTitle, bookerName, company } = eventInfo.event.extendedProps;
           return (
@@ -175,9 +360,7 @@ function Calendar({ currentWeekStart, onWeekChange }) {
           minute: '2-digit',
           hour12: false
         }}
-        firstDay={1} // Lundi comme premier jour
-        weekNumbers={false}
-        dayHeaderFormat={{ weekday: 'long' }}
+        dayHeaderFormat={{ weekday: 'long', day: 'numeric', month: 'short' }}
         nowIndicator={true}
         eventDisplay="block"
         eventOverlap={true}
