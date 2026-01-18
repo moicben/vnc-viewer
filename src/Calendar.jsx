@@ -127,7 +127,7 @@ function Calendar({ currentWeekStart, onWeekChange }) {
         headerToolbar={false}
         allDaySlot={false}
         slotMinTime="08:00:00"
-        slotMaxTime="20:00:00"
+        slotMaxTime="17:00:00"
         slotDuration="00:30:00"
         slotLabelInterval="01:00:00"
         height="auto"
@@ -149,7 +149,6 @@ function Calendar({ currentWeekStart, onWeekChange }) {
                 color: '#e0e0e0',
                 lineHeight: '1.3',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
                 {meetingTitle}
@@ -159,7 +158,6 @@ function Calendar({ currentWeekStart, onWeekChange }) {
                 color: '#999',
                 lineHeight: '1.2',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
                 {bookerName}{company ? ` • ${company}` : ''}
@@ -185,7 +183,7 @@ function Calendar({ currentWeekStart, onWeekChange }) {
         eventOverlap={true}
         eventConstraint={{
           start: '08:00',
-          end: '20:00'
+          end: '17:00'
         }}
       />
     </div>

@@ -580,6 +580,20 @@ document.addEventListener('visibilitychange', () => {
 
 // ==================== CALENDAR VIEW ====================
 
+// Convertir une date UTC en heure Makassar (UTC+8)
+function getMakassarTime(date) {
+    // Créer une nouvelle date avec l'offset Makassar (UTC+8)
+    const makassarOffset = 8 * 60; // 8 heures en minutes
+    const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
+    const makassarTime = new Date(utcTime + (makassarOffset * 60000));
+    return makassarTime;
+}
+
+// Obtenir l'heure actuelle en fuseau horaire Makassar
+function getCurrentMakassarTime() {
+    return getMakassarTime(new Date());
+}
+
 // Initialiser la semaine actuelle (en UTC)
 function initCurrentWeek() {
     const now = new Date();
@@ -676,7 +690,7 @@ function switchView() {
     }
 }
 
-// Mettre à jour les hauteurs des conteneurs de meetings
+// Mettre à jour les hauteurs des conteneurs de meetings et recalculer les positions
 function updateCalendarHeights() {
     if (!calendar || currentView !== 'calendar') return;
     
@@ -685,10 +699,60 @@ function updateCalendarHeights() {
     const dayContainers = calendar.querySelectorAll('.calendar-day-meetings');
     
     if (calendarElement && calendarGridElement && dayContainers.length > 0) {
+        // Calculer la nouvelle hauteur d'un slot de 30 minutes
+        let slotHeight = 28; // Valeur par défaut
+        const firstTimeCell = calendarGridElement.querySelector('.calendar-time-cell[style*="grid-row: 2"]');
+        if (firstTimeCell) {
+            const cellHeight = firstTimeCell.offsetHeight;
+            slotHeight = cellHeight / 2;
+        }
+        
         dayContainers.forEach(container => {
             // Le conteneur est un item de la CSS grid (grid-row: 2 / -1), donc 100% suffit.
             container.style.height = '100%';
+            
+            // Recalculer les positions de tous les meetings dans ce conteneur
+            const meetings = container.querySelectorAll('.calendar-meeting');
+            meetings.forEach(meeting => {
+                // Utiliser les attributs data pour recalculer les positions
+                const startSlot = parseFloat(meeting.getAttribute('data-start-slot') || '0');
+                const heightSlots = parseFloat(meeting.getAttribute('data-height-slots') || '1');
+                
+                // Appliquer la nouvelle hauteur de slot
+                meeting.style.top = `${startSlot * slotHeight}px`;
+                meeting.style.height = `${heightSlots * slotHeight}px`;
+            });
         });
+        
+        // Recalculer la position de la barre d'heure actuelle
+        const timeIndicator = calendarGridElement.querySelector('.calendar-current-time-indicator');
+        if (timeIndicator) {
+            // Obtenir l'heure actuelle en fuseau horaire Makassar
+            const makassarNow = getCurrentMakassarTime();
+            const localHour = makassarNow.getHours();
+            const localMinutes = makassarNow.getMinutes();
+            
+            if (localHour >= 7 && localHour < 17) {
+                const minutesFrom7AM = (localHour - 7) * 60 + localMinutes;
+                const slotPosition = minutesFrom7AM / 30;
+                const topPosition = slotPosition * slotHeight;
+                
+                const timeLine = timeIndicator.querySelector('.calendar-current-time-line');
+                const timeBullet = timeIndicator.querySelector('.calendar-current-time-bullet');
+                const timeLabel = timeIndicator.querySelector('.calendar-current-time-label');
+                
+                if (timeLine) timeLine.style.top = `${topPosition}px`;
+                if (timeBullet) timeBullet.style.top = `${topPosition - 5}px`;
+                if (timeLabel) {
+                    timeLabel.style.top = `${topPosition - 10}px`;
+                    const timeStr = `${String(localHour).padStart(2, '0')}:${String(localMinutes).padStart(2, '0')}`;
+                    timeLabel.textContent = timeStr;
+                }
+                timeIndicator.style.display = '';
+            } else {
+                timeIndicator.style.display = 'none';
+            }
+        }
     }
 }
 
@@ -815,7 +879,7 @@ function renderCalendar() {
     
     // Créer la structure du calendrier
     const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
-    const hours = Array.from({ length: 13 }, (_, i) => i + 7); // 7-19
+    const hours = Array.from({ length: 10 }, (_, i) => i + 7); // 7-16
     
     // Grouper les meetings par jour (en UTC)
     const meetingsByDay = {};
@@ -897,6 +961,19 @@ function renderCalendar() {
     
     // Attendre que le DOM soit mis à jour pour calculer les hauteurs
     setTimeout(() => {
+        // Calculer la hauteur d'un slot de 30 minutes en fonction de la hauteur réelle des cellules
+        const calendarGrid = calendar.querySelector('.calendar-grid');
+        let slotHeight = 28; // Valeur par défaut
+        if (calendarGrid) {
+            // Trouver une cellule de la première ligne d'heure pour mesurer sa hauteur
+            const firstTimeCell = calendarGrid.querySelector('.calendar-time-cell[style*="grid-row: 2"]');
+            if (firstTimeCell) {
+                const cellHeight = firstTimeCell.offsetHeight;
+                // Chaque ligne représente 1 heure, donc un slot de 30 minutes = la moitié
+                slotHeight = cellHeight / 2;
+            }
+        }
+        
         // Ajouter les meetings avec positionnement absolu dans chaque colonne de jour
         Object.keys(positionedMeetingsByDay).forEach(dayIndex => {
             const dayMeetings = positionedMeetingsByDay[dayIndex];
@@ -920,7 +997,6 @@ function renderCalendar() {
             dayContainer.style.clipPath = 'inset(0)';
             
             // Ajouter le conteneur au grid
-            const calendarGrid = calendar.querySelector('.calendar-grid');
             if (calendarGrid) {
                 calendarGrid.appendChild(dayContainer);
             }
@@ -929,14 +1005,15 @@ function renderCalendar() {
             const meetingStart = new Date(meeting.meeting_start_at);
             const duration = meeting.duration || 30;
             const startMinutes = meetingStart.getUTCHours() * 60 + meetingStart.getUTCMinutes();
-            const startSlot = (startMinutes - 7 * 60) / 30; // Position précise en slots (en UTC) - plage 7h-19h
+            const startSlot = (startMinutes - 7 * 60) / 30; // Position précise en slots (en UTC) - plage 7h-16h
             const heightSlots = duration / 30;
             
-            if (startSlot < 0 || startSlot >= 26) return; // Hors de la plage 7h-19h (13 heures × 2 créneaux = 26 slots)
+            if (startSlot < 0 || startSlot >= 20) return; // Hors de la plage 7h-16h (10 heures × 2 créneaux = 20 slots)
             
             const identity = meeting.identities;
             const bookerName = identity?.fullname || meeting.participant_email || 'Inconnu';
             const company = identity?.company || '';
+            const organizerEmail = meeting.participant_email || identity?.email || '';
             const title = meeting.meeting_title || 'Meeting';
             
             const meetingElement = document.createElement('div');
@@ -953,8 +1030,8 @@ function renderCalendar() {
             meetingElement.style.left = `${clampedLeft}%`;
             meetingElement.style.width = `${clampedWidth}%`;
             meetingElement.style.maxWidth = `${100 - clampedLeft}%`;
-            meetingElement.style.top = `${startSlot * 28}px`;
-            meetingElement.style.height = `${heightSlots * 28}px`;
+            meetingElement.style.top = `${startSlot * slotHeight}px`;
+            meetingElement.style.height = `${heightSlots * slotHeight}px`;
             meetingElement.style.zIndex = meeting.position + 1;
             meetingElement.style.pointerEvents = 'auto';
             meetingElement.style.boxSizing = 'border-box';
@@ -962,10 +1039,13 @@ function renderCalendar() {
             meetingElement.style.paddingRight = '4px';
             meetingElement.style.overflow = 'hidden';
             meetingElement.title = `${title} - ${bookerName}${company ? ' (' + company + ')' : ''}`;
+            // Stocker les informations de slot pour le recalcul lors du redimensionnement
+            meetingElement.setAttribute('data-start-slot', startSlot.toString());
+            meetingElement.setAttribute('data-height-slots', heightSlots.toString());
             
             meetingElement.innerHTML = `
                 <div class="meeting-title">${title}</div>
-                <div class="meeting-booker">${bookerName}${company ? ` • ${company}` : ''}</div>
+                <div class="meeting-booker">${organizerEmail || 'Email non disponible'}</div>
             `;
             
             // Ajouter l'event listener pour ouvrir la popup
@@ -978,9 +1058,158 @@ function renderCalendar() {
         });
         });
         
+        // Supprimer l'ancienne barre d'heure actuelle si elle existe
+        const existingIndicator = calendarGrid.querySelector('.calendar-current-time-indicator');
+        if (existingIndicator) {
+            existingIndicator.remove();
+        }
+        
+        // Ajouter la barre d'heure actuelle (basée sur le fuseau horaire local)
+        addCurrentTimeIndicator(calendarGrid, slotHeight);
+        
         // Mettre à jour les hauteurs après le rendu
         updateCalendarHeights();
     }, 0);
+}
+
+// Ajouter la barre d'heure actuelle basée sur le fuseau horaire Makassar (UTC+8)
+function addCurrentTimeIndicator(calendarGrid, slotHeight) {
+    if (!calendarGrid) return;
+    
+    // Obtenir l'heure actuelle en fuseau horaire Makassar (UTC+8)
+    const makassarNow = getCurrentMakassarTime();
+    const localHour = makassarNow.getHours();
+    const localMinutes = makassarNow.getMinutes();
+    
+    // Vérifier si l'heure actuelle est dans la plage affichée (7h-16h)
+    if (localHour < 7 || localHour >= 17) return;
+    
+    // Trouver le jour actuel dans la semaine affichée (en fuseau horaire Makassar)
+    const makassarToday = new Date(makassarNow);
+    makassarToday.setHours(0, 0, 0, 0);
+    
+    // Convertir currentWeekStart (UTC) en date Makassar pour comparaison
+    let currentDayIndex = -1;
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+        const dayDateUTC = new Date(Date.UTC(
+            currentWeekStart.getUTCFullYear(),
+            currentWeekStart.getUTCMonth(),
+            currentWeekStart.getUTCDate() + dayIndex,
+            0, 0, 0, 0
+        ));
+        
+        // Convertir en heure Makassar
+        const dayDateMakassar = getMakassarTime(dayDateUTC);
+        dayDateMakassar.setHours(0, 0, 0, 0);
+        
+        // Comparer les dates (année, mois, jour)
+        if (dayDateMakassar.getFullYear() === makassarToday.getFullYear() &&
+            dayDateMakassar.getMonth() === makassarToday.getMonth() &&
+            dayDateMakassar.getDate() === makassarToday.getDate()) {
+            currentDayIndex = dayIndex;
+            break;
+        }
+    }
+    
+    // Si le jour actuel n'est pas dans la semaine affichée, ne pas afficher la barre
+    if (currentDayIndex === -1) return;
+    
+    // Calculer la position verticale précise
+    // Position en minutes depuis 7h du matin
+    const minutesFrom7AM = (localHour - 7) * 60 + localMinutes;
+    // Convertir en slots de 30 minutes
+    const slotPosition = minutesFrom7AM / 30;
+    // Position en pixels
+    const topPosition = slotPosition * slotHeight;
+    
+    // Créer la barre d'heure actuelle qui traverse toutes les colonnes du jour actuel
+    const timeIndicator = document.createElement('div');
+    timeIndicator.className = 'calendar-current-time-indicator';
+    timeIndicator.style.gridColumn = `${currentDayIndex + 2}`;
+    timeIndicator.style.gridRow = '2 / -1';
+    timeIndicator.style.position = 'relative';
+    timeIndicator.style.pointerEvents = 'none';
+    timeIndicator.style.zIndex = '1000';
+    timeIndicator.style.overflow = 'visible';
+    
+    // Créer la ligne horizontale qui traverse toute la colonne
+    const timeLine = document.createElement('div');
+    timeLine.className = 'calendar-current-time-line';
+    timeLine.style.position = 'absolute';
+    timeLine.style.top = `${topPosition}px`;
+    timeLine.style.left = '0';
+    timeLine.style.width = '100%';
+    timeLine.style.height = '3px';
+    timeLine.style.backgroundColor = '#4a9eff';
+    timeLine.style.boxShadow = '0 0 6px rgba(74, 158, 255, 0.8), 0 0 12px rgba(74, 158, 255, 0.4)';
+    timeLine.style.borderRadius = '2px';
+    
+    // Créer le point/bullet à gauche dans la colonne des heures
+    const timeBullet = document.createElement('div');
+    timeBullet.className = 'calendar-current-time-bullet';
+    timeBullet.style.position = 'absolute';
+    timeBullet.style.top = `${topPosition - 5}px`;
+    timeBullet.style.left = '-8px';
+    timeBullet.style.width = '12px';
+    timeBullet.style.height = '12px';
+    timeBullet.style.backgroundColor = '#4a9eff';
+    timeBullet.style.borderRadius = '50%';
+    timeBullet.style.boxShadow = '0 0 8px rgba(74, 158, 255, 1)';
+    timeBullet.style.border = '2px solid #0a0a0a';
+    timeBullet.style.zIndex = '1001';
+    
+    // Créer un label avec l'heure actuelle
+    const timeLabel = document.createElement('div');
+    timeLabel.className = 'calendar-current-time-label';
+    const timeStr = `${String(localHour).padStart(2, '0')}:${String(localMinutes).padStart(2, '0')}`;
+    timeLabel.textContent = timeStr;
+    timeLabel.style.position = 'absolute';
+    timeLabel.style.top = `${topPosition - 10}px`;
+    timeLabel.style.left = '4px';
+    timeLabel.style.backgroundColor = '#4a9eff';
+    timeLabel.style.color = '#fff';
+    timeLabel.style.padding = '2px 6px';
+    timeLabel.style.borderRadius = '4px';
+    timeLabel.style.fontSize = '11px';
+    timeLabel.style.fontWeight = '600';
+    timeLabel.style.fontFamily = 'Monaco, Menlo, Courier New, monospace';
+    timeLabel.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.3)';
+    timeLabel.style.zIndex = '1001';
+    timeLabel.style.whiteSpace = 'nowrap';
+    
+    timeIndicator.appendChild(timeLine);
+    timeIndicator.appendChild(timeBullet);
+    timeIndicator.appendChild(timeLabel);
+    
+    calendarGrid.appendChild(timeIndicator);
+    
+    // Mettre à jour la position toutes les minutes
+    const updatePosition = () => {
+        // Obtenir l'heure actuelle en fuseau horaire Makassar
+        const makassarNow = getCurrentMakassarTime();
+        const localHour = makassarNow.getHours();
+        const localMinutes = makassarNow.getMinutes();
+        
+        if (localHour < 7 || localHour >= 17) {
+            timeIndicator.style.display = 'none';
+            return;
+        }
+        
+        const minutesFrom7AM = (localHour - 7) * 60 + localMinutes;
+        const slotPosition = minutesFrom7AM / 30;
+        const topPosition = slotPosition * slotHeight;
+        
+        timeLine.style.top = `${topPosition}px`;
+        timeBullet.style.top = `${topPosition - 5}px`;
+        timeLabel.style.top = `${topPosition - 10}px`;
+        const timeStr = `${String(localHour).padStart(2, '0')}:${String(localMinutes).padStart(2, '0')}`;
+        timeLabel.textContent = timeStr;
+        timeIndicator.style.display = '';
+    };
+    
+    // Mettre à jour immédiatement et toutes les minutes
+    setInterval(updatePosition, 60000); // Toutes les minutes
+    updatePosition();
 }
 
 // Vérifier si deux dates sont le même jour (en UTC)

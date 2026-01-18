@@ -429,7 +429,7 @@ body {
 .calendar-grid {
     display: grid;
     grid-template-columns: 70px repeat(7, 1fr);
-    grid-template-rows: 56px repeat(13, 56px);
+    grid-template-rows: 56px repeat(10, 1fr);
     width: 100%;
     height: 100%;
     max-height: 10000px;
@@ -512,14 +512,14 @@ body {
     left: 0;
     z-index: 5;
     font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
-    height: 56px;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .calendar-cell {
-    height: 56px;
+    height: 100%;
     padding: 0;
     border-right: 1px solid #1a1a1a;
     border-bottom: 1px solid #1a1a1a;
@@ -532,6 +532,47 @@ body {
 .calendar-cell.now {
     background: #1a1a1a;
     border-left: 2px solid #444;
+}
+
+/* Barre d'heure actuelle */
+.calendar-current-time-indicator {
+    pointer-events: none;
+    overflow: visible;
+}
+
+.calendar-current-time-line {
+    position: absolute;
+    width: 100%;
+    height: 3px;
+    background-color: #4a9eff;
+    box-shadow: 0 0 6px rgba(74, 158, 255, 0.8), 0 0 12px rgba(74, 158, 255, 0.4);
+    border-radius: 2px;
+    z-index: 1000;
+}
+
+.calendar-current-time-bullet {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background-color: #4a9eff;
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(74, 158, 255, 1);
+    border: 2px solid #0a0a0a;
+    z-index: 1001;
+}
+
+.calendar-current-time-label {
+    position: absolute;
+    background-color: #4a9eff;
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    z-index: 1001;
+    white-space: nowrap;
 }
 
 .calendar-day-meetings {
@@ -577,7 +618,6 @@ body {
     color: #e0e0e0;
     line-height: 1.3;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
     flex-shrink: 0;
     width: 100%;
@@ -589,7 +629,6 @@ body {
     color: #999;
     line-height: 1.2;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
     flex-shrink: 0;
     width: 100%;
