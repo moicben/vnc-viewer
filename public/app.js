@@ -1391,6 +1391,7 @@ function showMeetingPopup(meeting) {
     const popupTitle = popup.querySelector('.meeting-popup-title');
     const popupDateTime = document.getElementById('meetingPopupDateTime');
     const popupCreatedAt = document.getElementById('meetingPopupCreatedAt');
+    const popupInternalId = document.getElementById('meetingPopupInternalId');
     const popupBooker = document.getElementById('meetingPopupBooker');
     const popupEmail = document.getElementById('meetingPopupEmail');
     const popupUrl = document.getElementById('meetingPopupUrl');
@@ -1434,6 +1435,7 @@ function showMeetingPopup(meeting) {
     popupTitle.textContent = title;
     popupDateTime.textContent = dateTimeStr;
     popupCreatedAt.textContent = createdAtStr;
+    popupInternalId.textContent = meeting.internal_id || 'Non renseigné';
     popupBooker.textContent = organizerEmail || 'Non renseigné';
     popupEmail.textContent = identityEmail || 'Non renseigné';
     
