@@ -1,0 +1,73 @@
+/* Styles pour les containers */
+
+.grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+}
+
+.grid.grid-single {
+    grid-template-columns: 1fr;
+}
+
+.grid-item {
+    background: #111111;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #1a1a1a;
+    transition: border-color 0.2s ease;
+}
+
+.grid-item:hover {
+    border-color: #2a2a2a;
+}
+
+.grid-item-header {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    padding: 12px 16px;
+    font-weight: 400;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #1a1a1a;
+}
+
+.grid-item-header .ip {
+    font-size: 12px;
+    color: #666;
+    font-weight: 400;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+}
+
+.grid-item-iframe {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: none;
+    display: block;
+    background: #000;
+}
+
+/* État vide */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+    background: #111111;
+    border-radius: 8px;
+    margin-top: 20px;
+    border: 1px solid #1a1a1a;
+}
+
+.empty-state h2 {
+    font-size: 18px;
+    margin-bottom: 8px;
+    color: #999;
+    font-weight: 400;
+}
+
+.empty-state p {
+    color: #666;
+    font-size: 14px;
+}

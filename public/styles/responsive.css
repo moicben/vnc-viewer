@@ -1,0 +1,140 @@
+/* Media queries pour le responsive */
+
+/* Responsive Containers */
+@media (max-width: 768px) {
+    body {
+        padding: 16px;
+    }
+    
+    .grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    
+    .controls {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    
+    .mode-switcher {
+        flex: 1;
+        min-width: 100%;
+    }
+    
+    .mode-switcher-btn {
+        width: 100%;
+    }
+    
+    .controls-left {
+        width: 100%;
+    }
+    
+    .controls-right {
+        width: 100%;
+        margin-left: 0;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .count {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1200px) {
+    .grid {
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    }
+}
+
+@media (min-width: 1600px) {
+    .grid {
+        grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+    }
+}
+
+/* Responsive Calendar */
+@media (max-width: 1200px) {
+    .calendar {
+        height: calc(100vh - 200px);
+    }
+    
+    .calendar-grid {
+        grid-template-columns: 60px repeat(4, minmax(100px, 1fr));
+    }
+    
+    .calendar-time-cell {
+        font-size: 11px;
+        padding: 6px 4px;
+    }
+    
+    .calendar-day-header {
+        padding: 10px 6px;
+    }
+    
+    .day-name {
+        font-size: 11px;
+    }
+    
+    .day-number {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 768px) {
+    .calendar-header {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .calendar-week-title {
+        min-width: auto;
+        font-size: 14px;
+    }
+    
+    .calendar {
+        height: calc(100vh - 250px);
+    }
+    
+    .controls-left {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+    
+    .controls-right {
+        width: 100%;
+        margin-left: 0;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .view-switcher {
+        width: 100%;
+    }
+    
+    .view-switcher-btn {
+        width: 100%;
+    }
+    
+    .containers-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .calendar-header {
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    .meeting-popup-content {
+        padding: 20px;
+        max-width: 95%;
+    }
+    
+    .meeting-popup-title {
+        font-size: 18px;
+    }
+}
