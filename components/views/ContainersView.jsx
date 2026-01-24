@@ -44,6 +44,10 @@ export default function ContainersView() {
         [containers]
     );
 
+    const containersCountLabel = useMemo(() => {
+        return `${containersToDisplay.length}/${containers.length} containers`;
+    }, [containersToDisplay.length, containers.length]);
+
     const loadInitialData = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -144,6 +148,13 @@ export default function ContainersView() {
         </div>
     );
 
+    const filtersBar = (
+        <>
+            {modeSwitcher}
+            <div className="view-section-meta">{containersCountLabel}</div>
+        </>
+    );
+
     const updateModeIndicator = useCallback(() => {
         const switcher = modeSwitcherRef.current;
         if (!switcher) return;
@@ -190,7 +201,7 @@ export default function ContainersView() {
     }
 
     return (
-        <ViewShell title="Containers" meta={headerMeta} filters={modeSwitcher}>
+        <ViewShell title="Containers" meta={headerMeta} filters={filtersBar}>
             <div className="grid">
                 {containersToPreload.length === 0 ? (
                     <div className="empty-state">

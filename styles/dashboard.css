@@ -41,14 +41,58 @@ body {
     text-overflow: ellipsis;
 }
 
+.sidebar-brand {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
+    line-height: 1;
+}
+
+.sidebar-brand:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.22);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
 .sidebar-toggle {
     background: #141414;
     border: 1px solid #2a2a2a;
     color: #e0e0e0;
     border-radius: 6px;
-    padding: 6px 8px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+}
+
+.sidebar-toggle:hover {
+    background: #1a1a1a;
+    border-color: #333;
+}
+
+.sidebar-toggle:active {
+    background: #141414;
+}
+
+.sidebar-toggle:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.22);
+    outline-offset: 2px;
+}
+
+.sidebar.collapsed .sidebar-header {
+    justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-title {
+    display: inline-flex;
 }
 
 .sidebar-nav {
@@ -74,6 +118,21 @@ body {
     text-align: left;
 }
 
+.sidebar-item-icon {
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: currentColor;
+    opacity: 0.95;
+}
+
+.sidebar-item-icon svg {
+    display: block;
+}
+
 .sidebar-item:hover {
     background: #141414;
     border-color: #222;
@@ -95,13 +154,24 @@ body {
     display: none;
 }
 
+.sidebar.collapsed .sidebar-nav {
+    padding: 12px 10px;
+}
+
+.sidebar.collapsed .sidebar-item {
+    justify-content: center;
+    padding: 10px;
+    gap: 0;
+}
+
 .dashboard-main {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
     max-height: 100vh;
-    overflow-y: auto;
+    /* Le scroll doit se faire dans le contenu, pas sur le wrapper */
+    overflow: hidden;
 }
 
 .dashboard-header {
@@ -141,7 +211,9 @@ body {
 .dashboard-content {
     padding: 20px 24px 28px;
     flex: 1;
-    overflow: hidden;
+    /* Permet le scroll quand une vue dépasse la hauteur viewport */
+    overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -151,7 +223,6 @@ body {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    height: 100%;
     flex: 1;
     min-height: 0;
 }
@@ -171,6 +242,12 @@ body {
     flex-wrap: wrap;
 }
 
+.view-section-meta {
+    color: #9a9a9a;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
 .view-meta {
     display: flex;
     align-items: center;
@@ -184,8 +261,8 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    height: 100%;
+    /* Laisse la vue gérer ses propres overflow (Calendar, etc.) */
+    overflow: visible;
 }
 
 .calendar-wrapper {

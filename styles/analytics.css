@@ -1,0 +1,188 @@
+/* Analytics Funnel Styles */
+
+.analytics-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    /* Aligner la largeur sur les autres vues (Containers/Calendar) :
+       la zone `.dashboard-content` gère déjà le padding global. */
+    width: 100%;
+    padding: 0;
+    max-width: none;
+    margin: 0;
+}
+
+.analytics-filters {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.period-filter {
+    /* Même look que le filtre identité du Calendar */
+    background: #0a0a0a;
+    color: #e0e0e0;
+    border: 1px solid #2a2a2a;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 400;
+    font-family: inherit;
+    transition: all 0.2s ease;
+    min-width: 150px;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 32px;
+}
+
+.period-filter:hover {
+    border-color: #333;
+    background-color: #1a1a1a;
+}
+
+.period-filter:focus {
+    outline: none;
+    border-color: #4a9eff !important;
+    background-color: #1a1a1a;
+}
+
+.period-filter option {
+    background: #1a1a1a;
+    color: #e0e0e0;
+}
+
+.analytics-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 16px;
+    align-items: stretch;
+}
+
+.analytics-card {
+    background: linear-gradient(135deg, #1a1a1a 0%, #141414 100%);
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.analytics-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 16px 0 16px;
+}
+
+.analytics-card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #eaeaea;
+    letter-spacing: 0.2px;
+    margin: 0;
+}
+
+.analytics-card-subtitle {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #9a9a9a;
+}
+
+.analytics-chart {
+    padding: 8px 8px 12px 8px;
+}
+
+/* Les composants ECharts injectent un canvas, on force un padding correct */
+.analytics-chart > div {
+    width: 100%;
+}
+
+.funnel-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 32px;
+}
+
+.funnel-stat-card {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+
+.funnel-stat-label {
+    font-size: 12px;
+    color: #9a9a9a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.funnel-stat-value {
+    font-size: 24px;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.funnel-stat-unit {
+    font-size: 14px;
+    color: #667eea;
+    margin-left: 4px;
+}
+
+.analytics-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    gap: 20px;
+}
+
+.analytics-error {
+    background: #1a0a0a;
+    border: 1px solid #2a1a1a;
+    border-radius: 8px;
+    padding: 20px;
+    color: #ff6666;
+    text-align: center;
+}
+
+.analytics-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #9a9a9a;
+}
+
+.analytics-empty h3 {
+    font-size: 18px;
+    color: #e0e0e0;
+    margin-bottom: 8px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .analytics-container {
+        padding: 0;
+    }
+
+    .analytics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .funnel-stats {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .analytics-card-header {
+        padding: 14px 14px 0 14px;
+    }
+}

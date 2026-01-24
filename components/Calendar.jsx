@@ -1,13 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import FullCalendar from '@fullcalendar/react';
-import timeGridPlugin from '@fullcalendar/timegrid';
-import frLocale from '@fullcalendar/core/locales/fr';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import MeetingPopup from './MeetingPopup.jsx';
 
 const MEETINGS_API_URL = '/api/meetings';
 const SLOT_MIN_TIME = '00:00:00';
 const SLOT_MAX_TIME = '24:00:00';
 const SLOT_DURATION_MINUTES = 30;
+const DEFAULT_SLOT_PX = 50;
 
 function timeToMinutes(timeStr) { 
   // "HH:MM" or "HH:MM:SS"
@@ -16,15 +14,103 @@ function timeToMinutes(timeStr) {
   return h * 60 + m;
 }
 
+function startOfUtcDay(d) {
+  const date = new Date(d);
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
+}
+
+function addUtcDays(d, days) {
+  const date = new Date(d);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date;
+}
+
+function minutesSinceStartOfUtcDay(date) {
+  return date.getUTCHours() * 60 + date.getUTCMinutes();
+}
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function parseMeetingDateUtc(value) {
+  if (!value) return null;
+  const s = String(value);
+  // Si la string a déjà un timezone (Z ou ±HH:MM), Date() est OK.
+  if (/(Z|[+-]\d{2}:\d{2})$/.test(s)) return new Date(s);
+  // Sinon on force l'interprétation en UTC.
+  return new Date(`${s}Z`);
+}
+
+/**
+ * Calcule un layout simple d'overlap (colonnes) pour un ensemble d'événements d'une même journée.
+ * Chaque événement est { id, startMs, endMs, ... } (ms UTC).
+ */
+function computeOverlapLayout(dayEvents) {
+  // Trier par start puis end
+  const events = [...dayEvents].sort((a, b) => (a.startMs - b.startMs) || (a.endMs - b.endMs));
+  const active = [];
+  const placed = [];
+
+  // Pour chaque "cluster" d'événements en chevauchement, on veut un colCount commun.
+  let cluster = [];
+  let clusterEnd = -Infinity;
+  const flushCluster = () => {
+    if (cluster.length === 0) return;
+    const clusterMaxCols = Math.max(...cluster.map(e => e._colCount || 1));
+    for (const e of cluster) {
+      e.colCount = clusterMaxCols;
+      placed.push(e);
+    }
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+
+  for (const ev of events) {
+    // Purger les actifs terminés
+    for (let i = active.length - 1; i >= 0; i--) {
+      if (active[i].endMs <= ev.startMs) active.splice(i, 1);
+    }
+
+    // Nouvelle "fenêtre" de cluster si aucun overlap
+    if (cluster.length > 0 && ev.startMs >= clusterEnd) {
+      flushCluster();
+    }
+
+    // Trouver la première colonne libre
+    const usedCols = new Set(active.map(a => a.colIndex));
+    let colIndex = 0;
+    while (usedCols.has(colIndex)) colIndex += 1;
+
+    const withLayout = { ...ev, colIndex, colCount: 1 };
+
+    active.push(withLayout);
+    cluster.push(withLayout);
+    clusterEnd = Math.max(clusterEnd, withLayout.endMs);
+
+    // Mettre à jour le max colonnes au sein du cluster
+    const currentCols = Math.max(...active.map(a => a.colIndex + 1));
+    for (const e of cluster) {
+      e._colCount = Math.max(e._colCount || 1, currentCols);
+    }
+  }
+
+  flushCluster();
+  return placed;
+}
+
 function Calendar({ currentDate, onDateChange }) {
-  const calendarRef = useRef(null);
   const calendarWrapperRef = useRef(null);
-  const [events, setEvents] = useState([]);
   const [meetingsData, setMeetingsData] = useState([]);
+  const [allMeetingsData, setAllMeetingsData] = useState([]);
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [calendarHeight, setCalendarHeight] = useState(null);
+  const [selectedIdentityId, setSelectedIdentityId] = useState(null);
+  const [availableIdentities, setAvailableIdentities] = useState([]);
+  const calendarBodyRef = useRef(null);
   const [currentViewDate, setCurrentViewDate] = useState(() => {
     // Initialiser avec aujourd'hui en UTC
     const today = new Date();
@@ -54,37 +140,35 @@ function Calendar({ currentDate, onDateChange }) {
       const data = await response.json();
       const meetings = data.meetings || [];
       
-      // Stocker les données complètes pour la popup
-      setMeetingsData(meetings);
+      // Stocker toutes les données pour le filtrage
+      setAllMeetingsData(meetings);
       
-      // Convertir les meetings en format FullCalendar
-      const calendarEvents = meetings.map(meeting => {
-        const start = new Date(meeting.meeting_start_at);
-        const duration = meeting.meeting_duration_minutes || 30;
-        const end = new Date(start.getTime() + duration * 60 * 1000);
-        
-        const identity = meeting.identities;
-        const bookerName = identity?.fullname || meeting.participant_email || 'Inconnu';
-        const company = identity?.company || '';
-        const title = meeting.meeting_title || 'Meeting';
-        
-        return {
-          id: meeting.id,
-          title: `${title} - ${bookerName}${company ? ` (${company})` : ''}`,
-          start: start.toISOString(),
-          end: end.toISOString(),
-          extendedProps: {
-            meetingId: meeting.id,
-            meetingTitle: title,
-            bookerName,
-            company,
-            meetingUrl: meeting.meeting_url,
-            comment: meeting.comment
+      // Extraire les identités uniques disponibles
+      const identitiesMap = new Map();
+      meetings.forEach(meeting => {
+        if (meeting.identities && meeting.identities.id) {
+          const identity = meeting.identities;
+          if (!identitiesMap.has(identity.id)) {
+            identitiesMap.set(identity.id, {
+              id: identity.id,
+              fullname: identity.fullname || 'Inconnu',
+              company: identity.company || '',
+              email: identity.email || ''
+            });
           }
-        };
+        }
       });
+      const identities = Array.from(identitiesMap.values()).sort((a, b) => {
+        const nameA = a.fullname.toLowerCase();
+        const nameB = b.fullname.toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+      setAvailableIdentities(identities);
       
-      setEvents(calendarEvents);
+      // Réinitialiser le filtre si l'identité sélectionnée n'existe plus
+      if (selectedIdentityId && !identities.find(id => id.id === selectedIdentityId)) {
+        setSelectedIdentityId(null);
+      }
     } catch (err) {
       console.error('Erreur lors de la récupération des meetings:', err);
       setError(err.message);
@@ -148,54 +232,16 @@ function Calendar({ currentDate, onDateChange }) {
     };
   }, []);
 
-  // Forcer une hauteur uniforme de chaque slot (remplit toute la hauteur)
+  // Convertir les meetings en événements avec filtrage par identité
   useEffect(() => {
-    if (calendarRef.current && calendarHeight) {
-      const calendarApi = calendarRef.current.getApi();
-      const rootEl = calendarRef.current.el;
-
-      const slotCount = Math.max(
-        1,
-        Math.round((timeToMinutes(SLOT_MAX_TIME) - timeToMinutes(SLOT_MIN_TIME)) / SLOT_DURATION_MINUTES)
-      );
-
-      let cancelled = false;
-
-      const applyUniformSlotHeights = () => {
-        if (cancelled || !rootEl) return;
-
-        // 1) S'assurer que la taille de base est à jour
-        calendarApi.updateSize();
-
-        // 2) Mesurer la hauteur réelle disponible pour la grille horaire
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-
-          const timegridBody = rootEl.querySelector('.fc-timegrid-body');
-          const bodyRect = timegridBody?.getBoundingClientRect();
-          const bodyHeight = bodyRect?.height || 0;
-          if (!bodyHeight) return;
-
-          const slotPx = '50';
-          rootEl.style.setProperty('--vnc-timegrid-slot-count', String(slotCount));
-          rootEl.style.setProperty('--vnc-timegrid-slot-height', `${slotPx}px`);
-
-          // 3) Forcer FullCalendar à recalculer les coords avec les nouvelles hauteurs
-          requestAnimationFrame(() => {
-            if (cancelled) return;
-            calendarApi.updateSize();
-          });
-        });
-      };
-
-      const timeoutId = setTimeout(applyUniformSlotHeights, 0);
-
-      return () => {
-        cancelled = true;
-        clearTimeout(timeoutId);
-      };
-    }
-  }, [calendarHeight, currentViewDate]);
+    // Filtrer les meetings selon l'identité sélectionnée
+    const filteredMeetings = selectedIdentityId
+      ? allMeetingsData.filter(meeting => meeting.identities?.id === selectedIdentityId)
+      : allMeetingsData;
+    
+    // Stocker les données filtrées pour la popup
+    setMeetingsData(filteredMeetings);
+  }, [allMeetingsData, selectedIdentityId]);
 
   // Charger les meetings quand la date change
   useEffect(() => {
@@ -204,29 +250,11 @@ function Calendar({ currentDate, onDateChange }) {
     loadMeetings(startDate, endDate);
   }, [currentViewDate]);
 
-  // Gérer le changement de date dans FullCalendar
-  const handleDatesSet = (dateInfo) => {
-    const start = new Date(dateInfo.start);
-    start.setUTCHours(0, 0, 0, 0);
-    
-    // Mettre à jour la date de vue si elle a changé
-    if (start.getTime() !== currentViewDate.getTime()) {
-      setCurrentViewDate(start);
-      if (onDateChange) {
-        onDateChange(start);
-      }
-    }
-  };
-
   // Naviguer vers une date spécifique
   useEffect(() => {
-    if (calendarRef.current && currentDate) {
-      const calendarApi = calendarRef.current.getApi();
-      const targetDate = new Date(currentDate);
-      targetDate.setUTCHours(0, 0, 0, 0);
-      calendarApi.gotoDate(targetDate);
-      setCurrentViewDate(targetDate);
-    }
+    if (!currentDate) return;
+    const targetDate = startOfUtcDay(currentDate);
+    setCurrentViewDate(targetDate);
   }, [currentDate]);
 
   // Navigation précédent/suivant
@@ -235,10 +263,6 @@ function Calendar({ currentDate, onDateChange }) {
     newDate.setUTCDate(currentViewDate.getUTCDate() + days);
     newDate.setUTCHours(0, 0, 0, 0);
     
-    if (calendarRef.current) {
-      const calendarApi = calendarRef.current.getApi();
-      calendarApi.gotoDate(newDate);
-    }
     setCurrentViewDate(newDate);
     if (onDateChange) {
       onDateChange(newDate);
@@ -250,24 +274,23 @@ function Calendar({ currentDate, onDateChange }) {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     
-    if (calendarRef.current) {
-      const calendarApi = calendarRef.current.getApi();
-      calendarApi.gotoDate(today);
-    }
     setCurrentViewDate(today);
     if (onDateChange) {
       onDateChange(today);
     }
   };
 
-  // Gérer le clic sur un event
-  const handleEventClick = (clickInfo) => {
-    const meetingId = clickInfo.event.extendedProps.meetingId;
-    const meeting = meetingsData.find(m => m.id === meetingId);
-    if (meeting) {
-      setSelectedMeeting(meeting);
-    }
-  };
+  const slotCount = useMemo(() => {
+    const totalMinutes = timeToMinutes(SLOT_MAX_TIME) - timeToMinutes(SLOT_MIN_TIME);
+    return Math.max(1, Math.round(totalMinutes / SLOT_DURATION_MINUTES));
+  }, []);
+
+  const slotHeightPx = DEFAULT_SLOT_PX;
+  const pxPerMinute = slotHeightPx / SLOT_DURATION_MINUTES;
+
+  const viewDays = useMemo(() => {
+    return Array.from({ length: 4 }, (_, i) => startOfUtcDay(addUtcDays(currentViewDate, i)));
+  }, [currentViewDate]);
 
   // Formater la plage de dates affichée
   const formatDateRange = () => {
@@ -302,32 +325,115 @@ function Calendar({ currentDate, onDateChange }) {
     const dayEnd = new Date(dayDate);
     dayEnd.setUTCHours(23, 59, 59, 999);
     
-    return events.filter(event => {
-      const eventStart = new Date(event.start);
-      return eventStart >= dayStart && eventStart <= dayEnd;
+    return meetingsData.filter(meeting => {
+      const meetingStart = parseMeetingDateUtc(meeting.meeting_start_at) || new Date(meeting.meeting_start_at);
+      return meetingStart >= dayStart && meetingStart <= dayEnd;
     }).length;
   };
 
-  // Personnaliser le contenu de l'en-tête de jour
-  const dayHeaderContent = (dayInfo) => {
-    const eventCount = getEventCountForDay(dayInfo.date);
-    // Extraire seulement le jour de la semaine et capitaliser la première lettre
-    const dayOfWeekRaw = dayInfo.date.toLocaleDateString('fr-FR', { weekday: 'long', timeZone: 'UTC' });
+  const formatDayHeader = (dayDate) => {
+    const dayOfWeekRaw = dayDate.toLocaleDateString('fr-FR', { weekday: 'long', timeZone: 'UTC' });
     const dayOfWeek = dayOfWeekRaw.charAt(0).toUpperCase() + dayOfWeekRaw.slice(1);
-    
-    if (eventCount > 0) {
-      return {
-        html: `
-          <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; width: 100%;">
-            <div style="font-size: 12px; font-weight: 500; color: #fff;">${dayOfWeek}</div>
-            <div style="font-size: 11px; color: #999; font-weight: 400;">${eventCount}</div>
-          </div>
-        `
-      };
-    }
-    // Si pas d'événements, retourner juste le jour de la semaine capitalisé
-    return dayOfWeek;
+    const eventCount = getEventCountForDay(dayDate);
+    return { dayOfWeek, eventCount };
   };
+
+  const meetingsByDayWithLayout = useMemo(() => {
+    const startMinutes = timeToMinutes(SLOT_MIN_TIME);
+    const endMinutes = timeToMinutes(SLOT_MAX_TIME);
+    const viewStartMs = startOfUtcDay(currentViewDate).getTime();
+    const viewEndMs = addUtcDays(currentViewDate, 4).getTime(); // fin exclusive
+
+    const normalized = meetingsData
+      .map(meeting => {
+        const start = parseMeetingDateUtc(meeting.meeting_start_at) || new Date(meeting.meeting_start_at);
+        const duration = meeting.meeting_duration_minutes || 30;
+        const end = new Date(start.getTime() + duration * 60 * 1000);
+        return {
+          meeting,
+          id: meeting.id,
+          startMs: start.getTime(),
+          endMs: end.getTime(),
+          startDate: start,
+          endDate: end
+        };
+      })
+      .filter(ev => ev.endMs > viewStartMs && ev.startMs < viewEndMs);
+
+    const byDay = new Map(); // dayIndex -> events
+    for (let i = 0; i < 4; i++) byDay.set(i, []);
+
+    for (const ev of normalized) {
+      // On affiche l'événement dans la colonne du jour de son start (comportement "timegrid" simple)
+      const dayIndex = Math.floor((startOfUtcDay(ev.startDate).getTime() - startOfUtcDay(currentViewDate).getTime()) / (24 * 60 * 60 * 1000));
+      if (dayIndex < 0 || dayIndex > 3) continue;
+
+      const startMin = minutesSinceStartOfUtcDay(ev.startDate);
+      const endMinRaw = minutesSinceStartOfUtcDay(ev.endDate);
+      const endMin = ev.endDate.getUTCDate() !== ev.startDate.getUTCDate() ? 24 * 60 : endMinRaw;
+
+      const clampedStartMin = clamp(startMin, startMinutes, endMinutes);
+      const clampedEndMin = clamp(endMin, startMinutes, endMinutes);
+      if (clampedEndMin <= clampedStartMin) continue;
+
+      byDay.get(dayIndex).push({
+        ...ev,
+        startMin: clampedStartMin,
+        endMin: clampedEndMin
+      });
+    }
+
+    const result = new Map();
+    for (let dayIndex = 0; dayIndex < 4; dayIndex++) {
+      const dayEvents = byDay.get(dayIndex);
+      const withLayout = computeOverlapLayout(dayEvents.map(e => ({
+        ...e,
+        // Utiliser la timeline minute (ms pour overlap)
+        startMs: startOfUtcDay(e.startDate).getTime() + e.startMin * 60 * 1000,
+        endMs: startOfUtcDay(e.startDate).getTime() + e.endMin * 60 * 1000
+      })));
+      result.set(dayIndex, withLayout);
+    }
+
+    return result;
+  }, [meetingsData, currentViewDate]);
+
+  // Rafraîchir l'indicateur "now"
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(t => (t + 1) % 1_000_000), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const nowIndicator = useMemo(() => {
+    const now = new Date();
+    const todayUtc = startOfUtcDay(now).getTime();
+    const viewStartUtc = startOfUtcDay(currentViewDate).getTime();
+    const dayIndex = Math.floor((todayUtc - viewStartUtc) / (24 * 60 * 60 * 1000));
+    if (dayIndex < 0 || dayIndex > 3) return null;
+
+    const minutes = minutesSinceStartOfUtcDay(now);
+    const startMinutes = timeToMinutes(SLOT_MIN_TIME);
+    const endMinutes = timeToMinutes(SLOT_MAX_TIME);
+    const clamped = clamp(minutes, startMinutes, endMinutes);
+    const topPx = (clamped - startMinutes) * pxPerMinute;
+
+    const hh = String(now.getUTCHours()).padStart(2, '0');
+    const mm = String(now.getUTCMinutes()).padStart(2, '0');
+
+    return { dayIndex, topPx, label: `${hh}:${mm}` };
+  }, [currentViewDate, pxPerMinute, nowTick]);
+
+  // Scroll initial vers l'heure actuelle (si visible dans la plage)
+  useEffect(() => {
+    if (!calendarBodyRef.current) return;
+    const el = calendarBodyRef.current;
+    const now = new Date();
+    const startMinutes = timeToMinutes(SLOT_MIN_TIME);
+    const minutes = minutesSinceStartOfUtcDay(now);
+    const topPx = Math.max(0, (minutes - startMinutes) * pxPerMinute - 200);
+    el.scrollTop = topPx;
+  }, [currentViewDate, pxPerMinute]);
 
   return (
     <div 
@@ -350,9 +456,48 @@ function Calendar({ currentDate, onDateChange }) {
       )}
 
       {loading && (
-        <div className="loading">
-          <div className="spinner" />
-          <p>Chargement du planning...</p>
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(10, 10, 10, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            background: '#1a1a1a',
+            border: '1px solid #2a2a2a',
+            borderRadius: '12px',
+            padding: '32px 40px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+            minWidth: '200px'
+          }}>
+            <div style={{
+              border: '3px solid #2a2a2a',
+              borderTop: '3px solid #4a9eff',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              animation: 'spin 0.8s linear infinite'
+            }} />
+            <p style={{
+              color: '#e0e0e0',
+              fontSize: '14px',
+              fontWeight: 500,
+              margin: 0
+            }}>
+              Chargement des meetings...
+            </p>
+          </div>
         </div>
       )}
       
@@ -360,167 +505,292 @@ function Calendar({ currentDate, onDateChange }) {
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'space-between',
         gap: '12px',
         marginBottom: '16px',
-        padding: '0 24px'
+        padding: '0',
+        flexWrap: 'wrap'
       }}>
-        <button
-          onClick={() => navigateDays(-1)}
-          className="calendar-nav-btn"
-          style={{
-            background: '#1a1a1a',
-            color: '#e0e0e0',
-            border: '1px solid #2a2a2a',
-            padding: '8px 12px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontFamily: 'inherit',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.background = '#222';
-            e.target.style.borderColor = '#333';
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.background = '#1a1a1a';
-            e.target.style.borderColor = '#2a2a2a';
-          }}
-        >
-          ←
-        </button>
+        {/* Filtre par identité */}
+        {availableIdentities.length > 0 && (
+          <select
+            value={selectedIdentityId || ''}
+            onChange={(e) => setSelectedIdentityId(e.target.value || null)}
+            className="identity-filter"
+            style={{
+              background: '#0a0a0a',
+              color: '#e0e0e0',
+              border: '1px solid #2a2a2a',
+              padding: '6px 12px',
+              paddingRight: '32px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontFamily: 'inherit',
+              minWidth: '120px',
+              appearance: 'none',
+              backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M6 9L1 4h10z'/%3E%3C/svg%3E\")",
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 8px center'
+            }}
+          >
+            <option value="">All identity</option>
+            {availableIdentities.map(identity => (
+              <option key={identity.id} value={identity.id}>
+                {identity.fullname}
+              </option>
+            ))}
+          </select>
+        )}
         
-        <button
-          onClick={goToToday}
-          className="calendar-today-btn"
-          style={{
-            background: '#1a1a1a',
-            color: '#e0e0e0',
-            border: '1px solid #2a2a2a',
-            padding: '8px 16px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '13px',
-            fontFamily: 'inherit',
-            transition: 'all 0.2s ease',
-            fontWeight: 500
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.background = '#222';
-            e.target.style.borderColor = '#333';
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.background = '#1a1a1a';
-            e.target.style.borderColor = '#2a2a2a';
-          }}
-        >
-          Aujourd'hui
-        </button>
-        
-        <span style={{
-          fontSize: '13px',
-          color: '#999',
-          minWidth: '200px',
-          textAlign: 'center'
+        {/* Navigateur de semaine */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px'
         }}>
-          {formatDateRange()}
-        </span>
-        
-        <button
-          onClick={() => navigateDays(1)}
-          className="calendar-nav-btn"
-          style={{
-            background: '#1a1a1a',
-            color: '#e0e0e0',
-            border: '1px solid #2a2a2a',
-            padding: '8px 12px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontFamily: 'inherit',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.background = '#222';
-            e.target.style.borderColor = '#333';
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.background = '#1a1a1a';
-            e.target.style.borderColor = '#2a2a2a';
-          }}
-        >
-          →
-        </button>
+          <button
+            onClick={goToToday}
+            className="calendar-today-btn"
+            style={{
+              background: '#1a1a1a',
+              color: '#e0e0e0',
+              border: '1px solid #2a2a2a',
+              padding: '6px 16px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontFamily: 'inherit',
+              transition: 'all 0.2s ease',
+              fontWeight: 400
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.background = '#222';
+              e.target.style.borderColor = '#333';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = '#1a1a1a';
+              e.target.style.borderColor = '#2a2a2a';
+            }}
+          >
+            Today
+          </button>
+          
+          <span style={{
+            fontSize: '13px',
+            color: '#999',
+            textAlign: 'center'
+          }}>
+            {formatDateRange()}
+          </span>
+          
+          <button
+            onClick={() => navigateDays(1)}
+            className="calendar-nav-btn"
+            style={{
+              background: '#1a1a1a',
+              color: '#e0e0e0',
+              border: '1px solid #2a2a2a',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontFamily: 'inherit',
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.background = '#222';
+              e.target.style.borderColor = '#333';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = '#1a1a1a';
+              e.target.style.borderColor = '#2a2a2a';
+            }}
+          >
+            →
+          </button>
+        </div>
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', height: calendarHeight ? `${calendarHeight}px` : '100%' }}>
-        <FullCalendar
-          ref={calendarRef}
-          plugins={[timeGridPlugin]}
-          initialView="timeGridFourDay"
-          locale={frLocale}
-          headerToolbar={false}
-          allDaySlot={false}
-          slotMinTime={SLOT_MIN_TIME}
-          slotMaxTime={SLOT_MAX_TIME}
-          slotDuration="00:30:00"
-          slotLabelInterval="01:00:00"
-          height={calendarHeight || 'auto'}
-        events={events}
-        datesSet={handleDatesSet}
-        initialDate={currentViewDate}
-        timeZone="UTC"
-        views={{
-          timeGridFourDay: {
-            type: 'timeGrid',
-            duration: { days: 4 },
-            buttonText: '4 jours'
-          }
-        }}
-        validRange={(nowDate) => {
-          // Permettre le défilement dans le passé et le futur
-          return {
-            start: null,
-            end: null
-          };
-        }} 
-        eventClick={handleEventClick}
-        eventContent={(eventInfo) => {
-          const { meetingTitle, bookerName, company } = eventInfo.event.extendedProps;
-          return (
-            <div className="fc-event-main-frame">
-              <div className="fc-event-title-text">
-                {meetingTitle}
-              </div>
-              <div className="fc-event-booker-text">
-                {bookerName}{company ? ` • ${company}` : ''}
-              </div>
+        <div
+          className="calendar"
+          style={{
+            height: '100%',
+            ...(calendarHeight ? { maxHeight: `${calendarHeight}px` } : null)
+          }}
+        >
+          {/* Header fixe */}
+          <div
+            className="calendar-grid calendar-grid-header"
+            style={{
+              gridTemplateRows: `56px`,
+              gridTemplateColumns: `70px repeat(4, 1fr)`
+            }}
+          >
+            <div
+              className="calendar-time-column calendar-corner"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#999',
+                fontSize: '12px'
+              }}
+            >
+              UTC
             </div>
-          );
-        }}
-        eventTimeFormat={{
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-          timeZone: 'UTC'
-        }}
-        slotLabelFormat={{
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-          timeZone: 'UTC'
-        }}
-        dayHeaderFormat={{ weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' }}
-        dayHeaderContent={dayHeaderContent}
-        nowIndicator={true}
-        eventDisplay="block"
-        eventOverlap={true}
-        eventConstraint={{
-          start: '00:00',
-          end: '24:00'
-        }}
-        />
+            {viewDays.map((dayDate, dayIndex) => {
+              const { dayOfWeek, eventCount } = formatDayHeader(dayDate);
+              const isToday = startOfUtcDay(new Date()).getTime() === dayDate.getTime();
+              return (
+                <div
+                  key={dayDate.toISOString()}
+                  className={`calendar-day-header ${isToday ? 'today' : ''}`}
+                  style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
+                >
+                  <div className="day-name" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 500, color: '#fff' }}>{dayOfWeek}</span>
+                    {eventCount > 0 && <span className="meeting-count" style={{ fontSize: '11px' }}>{eventCount}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Body scrollable */}
+          <div
+            ref={calendarBodyRef}
+            className="calendar-scroll"
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              overflowX: 'hidden'
+            }}
+          >
+            <div
+              className="calendar-grid calendar-grid-body"
+              style={{
+                gridTemplateColumns: `70px repeat(4, 1fr)`,
+                gridTemplateRows: `repeat(${slotCount}, ${slotHeightPx}px)`
+              }}
+            >
+              {/* Colonne horaires + cellules */}
+              {Array.from({ length: slotCount }, (_, slotIndex) => {
+                const minutesFromStart = slotIndex * SLOT_DURATION_MINUTES + timeToMinutes(SLOT_MIN_TIME);
+                const hour = Math.floor(minutesFromStart / 60);
+                const minute = minutesFromStart % 60;
+                const isHour = minute === 0;
+                const label = isHour ? `${String(hour).padStart(2, '0')}:00` : '';
+
+                return (
+                  <React.Fragment key={`slot-${slotIndex}`}>
+                    <div className="calendar-time-cell" style={{ gridColumn: 1, gridRow: slotIndex + 1 }}>
+                      {label}
+                    </div>
+                    {viewDays.map((dayDate, dayIndex) => {
+                      const isToday = startOfUtcDay(new Date()).getTime() === dayDate.getTime();
+                      return (
+                        <div
+                          key={`cell-${slotIndex}-${dayIndex}`}
+                          className={`calendar-cell ${isToday ? 'today' : ''}`}
+                          style={{ gridColumn: dayIndex + 2, gridRow: slotIndex + 1 }}
+                        />
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+
+              {/* Overlays par jour (meetings) */}
+              {viewDays.map((dayDate, dayIndex) => {
+                const dayMeetings = meetingsByDayWithLayout.get(dayIndex) || [];
+                const startMinutes = timeToMinutes(SLOT_MIN_TIME);
+                const dayHeightPx = slotCount * slotHeightPx;
+
+                return (
+                  <div
+                    key={`meetings-${dayDate.toISOString()}`}
+                    className="calendar-day-meetings"
+                    style={{
+                      gridColumn: dayIndex + 2,
+                      gridRow: `1 / span ${slotCount}`,
+                      height: `${dayHeightPx}px`
+                    }}
+                  >
+                    {dayMeetings.map(ev => {
+                      const top = (ev.startMin - startMinutes) * pxPerMinute;
+                      const height = Math.max(8, (ev.endMin - ev.startMin) * pxPerMinute);
+
+                      const gapPx = 4;
+                      const widthPct = 100 / (ev.colCount || 1);
+                      const leftPct = widthPct * (ev.colIndex || 0);
+
+                      const identity = ev.meeting.identities;
+                      const bookerName = identity?.fullname || ev.meeting.participant_email || 'Inconnu';
+                      const company = identity?.company || '';
+                      const meetingTitle = ev.meeting.meeting_title || 'Meeting';
+                      // Email affiché: source unique = colonne meetings.participant_email
+                      const participantEmail = ev.meeting.participant_email || '';
+
+                      return (
+                        <div
+                          key={String(ev.id)}
+                          className="calendar-meeting"
+                          style={{
+                            top: `${top}px`,
+                            height: `${height}px`,
+                            left: `calc(${leftPct}% + ${gapPx / 2}px)`,
+                            width: `calc(${widthPct}% - ${gapPx}px)`
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedMeeting(ev.meeting);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedMeeting(ev.meeting);
+                            }
+                          }}
+                        >
+                          <div className="meeting-title">{meetingTitle}</div>
+                          <div className="meeting-booker">
+                            {participantEmail || `${bookerName}${company ? ` • ${company}` : ''}`}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+
+              {/* Indicateur "now" */}
+              {nowIndicator && (
+                <div
+                  className="calendar-current-time-indicator"
+                  style={{
+                    // Limiter la largeur à la colonne du jour actuel
+                    gridColumn: `${nowIndicator.dayIndex + 2} / span 1`,
+                    gridRow: `1 / span ${slotCount}`,
+                    position: 'relative',
+                    zIndex: 999,
+                    height: `${slotCount * slotHeightPx}px`
+                  }}
+                >
+                  <div className="calendar-current-time-line" style={{ top: `${nowIndicator.topPx}px` }} />
+                  <div className="calendar-current-time-bullet" style={{ top: `calc(${nowIndicator.topPx}px - 5px)`, left: '6px' }} />
+                  <div className="calendar-current-time-label" style={{ top: `calc(${nowIndicator.topPx}px - 12px)`, left: '24px' }}>
+                    {nowIndicator.label}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
       {selectedMeeting && (
         <MeetingPopup meeting={selectedMeeting} onClose={() => setSelectedMeeting(null)} />

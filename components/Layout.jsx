@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Sidebar from './Sidebar.jsx';
 
 export default function Layout({ views, activeView, onSelectView, children }) {
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
     return (
         <div className="dashboard">

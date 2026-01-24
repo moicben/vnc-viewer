@@ -17,14 +17,6 @@ export default function Document() {
                 <link rel="apple-touch-icon" sizes="144x144" href="/favicon.png" />
                 <link rel="apple-touch-icon" sizes="152x152" href="/favicon.png" />
                 <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png" />
-                {/* <link
-                    href="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.20/main.min.css"
-                    rel="stylesheet"
-                /> */}
-                {/* <link
-                    href="https://cdn.jsdelivr.net/npm/@fullcalendar/timegrid@6.1.20/main.min.css"
-                    rel="stylesheet"
-                /> */}
             </Head>
             <body>
                 <Main />
