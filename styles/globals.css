@@ -1,0 +1,9 @@
+/* Fichier global qui importe les modules CSS */
+
+@import './base.css';
+@import './controls.css';
+@import './containers.css';
+@import './calendar.css';
+@import './popup.css';
+@import './responsive.css';
+@import './dashboard.css';

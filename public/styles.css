@@ -1,8 +1,0 @@
-/* Fichier principal qui importe tous les modules CSS */
-
-@import './styles/base.css';
-@import './styles/controls.css';
-@import './styles/containers.css';
-@import './styles/calendar.css';
-@import './styles/popup.css';
-@import './styles/responsive.css';
