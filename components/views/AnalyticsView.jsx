@@ -6,7 +6,7 @@ import { fetchAnalytics } from '../../lib/api.js';
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
 const PERIOD_OPTIONS = [
-    { value: 'all', label: 'All-time' },
+    { value: 'all', label: 'All-Time' },
     { value: 'last_month', label: 'Last month' },
     { value: 'last_2_weeks', label: 'Last 2 weeks' },
     { value: 'last_week', label: 'Last week' },
