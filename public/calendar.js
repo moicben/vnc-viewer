@@ -3,7 +3,7 @@
 import { calendar, calendarView, containersView, containersControls, calendarHeader, countEl, viewSwitcher, prevWeekBtn, nextWeekBtn, calendarWeekTitle, identityFilter, loading, error, loadingText } from './dom.js';
 import { loadMeetingsFromAPI } from './api.js';
 import { isSameDay, getCurrentMakassarTime } from './utils.js';
-
+ 
 // État de la vue
 export let currentView = 'containers'; // 'containers' ou 'calendar'
 let currentDate = null; // Date de début de la vue (aujourd'hui + 3 jours suivants)
