@@ -31,7 +31,7 @@ export default function DashboardPage() {
     return (
         <>
             <Head>
-                <title>VNC Viewer Dashboard</title>
+                <title>AGI Dashboard</title>
             </Head>
             <Layout views={viewRegistry} activeView={activeView} onSelectView={handleSelectView}>
                 <ActiveComponent />
