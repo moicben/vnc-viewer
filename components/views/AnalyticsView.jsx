@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import ViewShell from '../ViewShell.jsx';
-import { fetchAnalytics, fetchConversions } from '../../lib/api.js';
+import { fetchAnalytics, fetchBestQueries, fetchConversions } from '../../lib/api.js';
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
@@ -50,6 +50,9 @@ export default function AnalyticsView() {
     const [conversionsTotal, setConversionsTotal] = useState(null);
     const [conversionsLoading, setConversionsLoading] = useState(false);
     const [conversionsError, setConversionsError] = useState(null);
+    const [bestQueriesRows, setBestQueriesRows] = useState([]);
+    const [bestQueriesLoading, setBestQueriesLoading] = useState(false);
+    const [bestQueriesError, setBestQueriesError] = useState(null);
 
     useEffect(() => {
         const loadAnalytics = async () => {
@@ -108,6 +111,26 @@ export default function AnalyticsView() {
 
         loadConversions();
     }, [selectedIdentityId, selectedPeriod, conversionsPage]);
+
+    useEffect(() => {
+        const loadBestQueries = async () => {
+            setBestQueriesLoading(true);
+            setBestQueriesError(null);
+            try {
+                const { startDate, endDate } = getPeriodRange(selectedPeriod);
+                const data = await fetchBestQueries(startDate, endDate, selectedIdentityId, 25);
+                const rows = Array.isArray(data?.items) ? data.items : [];
+                setBestQueriesRows(rows);
+            } catch (err) {
+                console.error('Erreur lors du chargement des best queries:', err);
+                setBestQueriesError(err.message);
+            } finally {
+                setBestQueriesLoading(false);
+            }
+        };
+
+        loadBestQueries();
+    }, [selectedIdentityId, selectedPeriod]);
 
     const funnel = analytics?.funnel ?? {
         meetingsPlanned: 0,
@@ -168,8 +191,8 @@ export default function AnalyticsView() {
                     return `${name}<br/><b>${value.toLocaleString('fr-FR')}</b>`;
                 }
             },
-            // `containLabel` + marge gauche pour éviter le clipping des valeurs de l'axe Y
-            grid: { left: 12, right: 16, top: 22, bottom: 54, containLabel: true },
+            // Style  pour pipeline
+            grid: { left: 12, right: 16, top: 22, bottom: 16, containLabel: true },
             xAxis: {
                 type: 'category',
                 data: steps.map((s) => s.label),
@@ -226,7 +249,7 @@ export default function AnalyticsView() {
     }, [steps]);
 
     const conversionBarsOption = useMemo(() => {
-        // Palette de gris sobres, du plus foncé au plus clair.
+        // Style  pour rates by event
         const palette = ['#2a2a2a', '#343434', '#3e3e3e', '#484848', '#525252'];
 
         const rows = [
@@ -286,8 +309,8 @@ export default function AnalyticsView() {
                     return `${r.label}<br/><b>${fmtPct(r.value)}%</b><br/>${num} / ${den}`;
                 }
             },
-            // Espace à gauche pour une colonne de labels (alignés à gauche)
-            grid: { left: 128, right: 0, top: 14, bottom: 30 },
+            // Espace pour rates by event
+            grid: { left: 128, right: 16, top: 14, bottom: 30 },
             xAxis: {
                 type: 'value',
                 min: 0,
@@ -305,8 +328,7 @@ export default function AnalyticsView() {
                 data: rows.map((r) => r.label),
                 axisTick: { show: false },
                 axisLine: { lineStyle: { color: 'rgba(255,255,255,0.12)' } },
-                // On garde l'alignement "right" (ancré sur l'axe),
-                // mais on aligne le texte à gauche dans un bloc de largeur fixe.
+                // Style  pour rates by event
                 axisLabel: {
                     color: '#b0b0b0',
                     fontSize: 12,
@@ -481,21 +503,80 @@ export default function AnalyticsView() {
                     </section>
                 </div>
 
-                <section className="analytics-card analytics-card--full">
-                    <header className="analytics-card-header">
-                        <div>
-                            <div className="analytics-card-title">Rates by event</div>
+                <div className="analytics-grid analytics-grid--rates">
+                    <section className="analytics-card analytics-card--ratesRow">
+                        <header className="analytics-card-header">
+                            <div>
+                                <div className="analytics-card-title">Rates by event</div>
+                            </div>
+                        </header>
+                        <div className="analytics-chart analytics-chart--conversions">
+                            <ReactECharts
+                                option={conversionBarsOption}
+                                className="analytics-echart analytics-echart--conversions"
+                                notMerge={true}
+                                lazyUpdate={true}
+                            />
                         </div>
-                    </header>
-                    <div className="analytics-chart analytics-chart--conversions">
-                        <ReactECharts
-                            option={conversionBarsOption}
-                            className="analytics-echart analytics-echart--conversions"
-                            notMerge={true}
-                            lazyUpdate={true}
-                        />
-                    </div>
-                </section>
+                    </section>
+
+                    <section className="analytics-card analytics-card--ratesRow analytics-card--bestQueries">
+                        <header className="analytics-card-header">
+                            <div>
+                                <div className="analytics-card-title">Best Queries</div>
+                            </div>
+                            <div className="conversions-pagination">
+                                <span className="conversions-pagination-meta">
+                                    {bestQueriesLoading ? 'Chargement…' : `${bestQueriesRows.length} résultats`}
+                                </span>
+                            </div>
+                        </header>
+
+                        {bestQueriesError ? (
+                            <div className="conversions-error">
+                                <div>Erreur lors du chargement des best queries</div>
+                                <div className="conversions-error-msg">{bestQueriesError}</div>
+                            </div>
+                        ) : (
+                            <div className="conversions-table-wrapper">
+                                <table className="conversions-table best-queries-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Query</th>
+                                            <th>Present</th>
+                                            <th>Logged</th>
+                                            <th>Overall</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {bestQueriesRows.length === 0 && !bestQueriesLoading ? (
+                                            <tr>
+                                                <td colSpan={4} className="conversions-empty">
+                                                    Aucune donnée sur la période sélectionnée.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            bestQueriesRows.map((row) => (
+                                                <tr key={row?.query ?? ''}>
+                                                    <td className="best-queries-query">{row?.query || '—'}</td>
+                                                    <td className="conversions-mono">
+                                                        {Number(row?.presentCount ?? 0).toLocaleString('fr-FR')}
+                                                    </td>
+                                                    <td className="conversions-mono">
+                                                        {Number(row?.loggedCount ?? 0).toLocaleString('fr-FR')}
+                                                    </td>
+                                                    <td className="conversions-mono">
+                                                        {Number(row?.overallCount ?? 0).toLocaleString('fr-FR')}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </section>
+                </div>
 
                 <section className="analytics-card analytics-card--full">
                     <header className="analytics-card-header">
