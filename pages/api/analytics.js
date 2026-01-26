@@ -127,9 +127,10 @@ export default async function handler(req, res) {
 
     const meetingsPlanned = meetingsFiltered.length;
     
-    // 2. Compter les participants détectés (meetings passés où status n'est pas 'no_participant_detected')
-    const pastMeetings = (meetingsFiltered || []).filter(meeting => {
-      return meeting.status !== 'no_participant_detected';
+    // 2. Compter les participants détectés (meetings passés où le status indique une présence)
+    // NOTE: on exclut explicitement "booked" (ex: meeting planifié mais non réellement "présent").
+    const pastMeetings = (meetingsFiltered || []).filter((meeting) => {
+      return meeting.status !== 'no_participant_detected' && meeting.status !== 'booked';
     });
     
     const participantsDetected = pastMeetings.length;
