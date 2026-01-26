@@ -7,10 +7,11 @@ const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
 const PERIOD_OPTIONS = [
     { value: 'all', label: 'All period' },
+    { value: 'today', label: 'Today' },
+    { value: 'yesterday', label: 'Yesterday' },
     { value: 'last_month', label: 'Last month' },
     { value: 'last_2_weeks', label: 'Last 2 weeks' },
     { value: 'last_week', label: 'Last week' },
-    { value: 'last_day', label: 'Last day' }
 ];
 
 function getPeriodRange(periodValue) {
@@ -19,6 +20,21 @@ function getPeriodRange(periodValue) {
 
     const startDate = new Date(endDate);
     switch (periodValue) {
+        case 'today':
+            startDate.setHours(0, 0, 0, 0);
+            break;
+        case 'yesterday': {
+            // Plage du jour civil d'hier (heure locale)
+            const y = new Date(endDate);
+            y.setDate(y.getDate() - 1);
+
+            startDate.setTime(y.getTime());
+            startDate.setHours(0, 0, 0, 0);
+
+            endDate.setTime(y.getTime());
+            endDate.setHours(23, 59, 59, 999);
+            break;
+        }
         case 'last_month':
             startDate.setDate(startDate.getDate() - 30);
             break;
@@ -27,9 +43,6 @@ function getPeriodRange(periodValue) {
             break;
         case 'last_week':
             startDate.setDate(startDate.getDate() - 7);
-            break;
-        case 'last_day':
-            startDate.setDate(startDate.getDate() - 1);
             break;
         default:
             return { startDate: null, endDate: null };
